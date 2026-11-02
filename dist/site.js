@@ -1,0 +1,1 @@
+const d=document.querySelector('#social-dialog');document.querySelectorAll('[data-social]').forEach(b=>b.addEventListener('click',()=>{document.querySelector('#dialog-text').textContent=`${b.dataset.social} will be available when Bollard’s channel is ready.`;d.showModal()}));d.addEventListener('click',e=>{if(e.target===d)d.close()});

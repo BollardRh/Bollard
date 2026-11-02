@@ -1,0 +1,141 @@
+/* --- component: glow ring button ------------------------------------------ */
+
+/* The outer pill. The reference nests one pill inside another: the outer is a
+   recessed channel and the inner sits raised within it, which is what gives the
+   whole control its sense of thickness. Lighting has to be opposite between the
+   two or the nesting doesn't read -- the channel is lit from below (dark top
+   edge, light bottom edge) and the slab inside it from above. */
+.glow-ring-btn {
+  --knob-size: 190px;
+  --gap: 26px;
+  --label-size: 44px;
+  --pill-pad-end: 72px;
+  --pill-pad: 12px;
+  --shell-pad: 10px;
+  --bezel: 6px;
+  /* The cap's size IS the band thickness in this approach: the visible ring
+     is the gap between the cap's edge and the disc's. */
+  --cap: 74%;
+
+  --pill-edge: #2a2a2a;
+  --text: #f2f2f2;
+
+  display: inline-flex;
+  padding: var(--shell-pad);
+  border: 1px solid #191919;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #0a0a0a 0%, #121212 100%);
+  box-shadow:
+    inset 0 2px 3px rgb(0 0 0 / 0.9),
+    inset 0 -1px 0 rgb(255 255 255 / 0.045),
+    0 30px 70px -24px rgb(0 0 0 / 0.95);
+}
+
+.glow-ring-btn__pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: var(--pill-pad) var(--pill-pad-end) var(--pill-pad) var(--pill-pad);
+  border: 1px solid var(--pill-edge);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1e1e1e 0%, #131313 100%);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  /* Lit from above, and casting onto the channel floor beneath it. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 2px 3px rgb(0 0 0 / 0.7),
+    0 8px 18px -6px rgb(0 0 0 / 0.8);
+}
+
+.glow-ring-btn__knob {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--knob-size);
+  height: var(--knob-size);
+  flex: none;
+}
+
+/* The shader. Transparent apart from the disc and its bloom, so it composites
+   straight over the page -- there is no separate recessed-disc backdrop here,
+   because the flowing liquid itself is the whole visible surface behind the
+   cap. */
+.glow-ring-btn__liquid {
+  position: absolute;
+  /* Deliberately larger than the knob: the glow needs somewhere to fall off
+     to. Keep this in sync with `overscan` in liquid-disc.ts (150% / 100% = 1.5). */
+  top: 50%;
+  left: 50%;
+  width: 150%;
+  height: 150%;
+  transform: translate(-50%, -50%);
+  display: block;
+  pointer-events: none;
+}
+
+/* The opaque cap. Its size is the real control for band thickness: the ring
+   you see is the gap between the cap's edge and the disc's. */
+.glow-ring-btn__cap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--cap);
+  height: var(--cap);
+  border-radius: 50%;
+  background: linear-gradient(165deg, #262626 0%, #0d0d0d 70%);
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 0.06),
+    inset 0 -10px 26px rgb(0 0 0 / 0.6),
+    /* Reads as the cap floating above the liquid rather than being a hole cut
+       into it. */
+    0 2px 10px rgb(0 0 0 / 0.7);
+}
+
+/* Bezel: a near-black hairline sitting just inside the cap's edge, with a
+   faint light on its lower inside so it reads as a groove cut into the
+   surface rather than a drawn circle. Also gives the cap a crisp termination
+   against the liquid behind it. */
+.glow-ring-btn__cap::after {
+  content: '';
+  position: absolute;
+  inset: var(--bezel);
+  border-radius: 50%;
+  border: 1px solid #070707;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.05);
+  pointer-events: none;
+}
+
+/* Holds the gradient/symbol definitions only — never rendered itself. */
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.glow-ring-btn__icon {
+  position: relative;
+  width: 50%;
+  height: 50%;
+  /* No `fill` here: a CSS rule outranks the presentation attribute on the path
+     and would replace the chrome gradient with a flat colour. */
+
+  /* Stacked shadows read as a solid object rather than a sticker. In order:
+     a light catch along the top edge, a hard dark line under the bottom edge
+     standing in for the material's thickness, then a soft cast shadow that
+     lifts the whole icon off the cap. */
+  filter:
+    drop-shadow(0 -1px 0 rgb(255 255 255 / 0.22))
+    drop-shadow(0 1px 0 rgb(0 0 0 / 0.65))
+    drop-shadow(0 4px 6px rgb(0 0 0 / 0.55));
+}
+
+.glow-ring-btn__label {
+  font-size: var(--label-size);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}

@@ -1,0 +1,5 @@
+/* A quiet full-page wipe inspired by GetLayers' Artist Loader. */
+html::after{content:'';position:fixed;inset:0;z-index:2147483000;background:#203b49;pointer-events:none;transform:translate3d(0,-101%,0);transition:transform .38s cubic-bezier(.76,0,.24,1)}
+html.bollard-arriving::after,html.bollard-leaving::after{transform:translate3d(0,0,0)}
+html.bollard-leaving::after{transition-duration:.32s}
+@media(prefers-reduced-motion:reduce){html::after{display:none}}

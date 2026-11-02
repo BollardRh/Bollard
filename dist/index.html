@@ -1,0 +1,2468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bollard</title>
+<meta name="description" content="Crash ratings for AI agents that touch money. Evidence before delegation." />
+<meta name="theme-color" content="#000000" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&display=swap" rel="stylesheet" />
+
+<script type="importmap">
+{ "imports": { "lenis": "./assets/vendor/lenis.mjs" } }
+</script>
+
+<!--
+  NORTHWALL — portable build.
+
+  One plain HTML file that reproduces the Next.js project exactly: no build
+  step, no framework. Lenis is the only external code. The spring solver, the
+  shared ticker, the in-view observers, the word-by-word text engine, the
+  opening panel, the counting figures, the rolling labels and every hover are
+  written by hand below, at the project's own constants.
+
+  Every photograph and glyph is fetched from the public bucket — the same
+  objects the recreation prompt links:
+    assets/northwall/<path>
+  A failed load raises a visible banner rather than a silent blank.
+
+  Deliberate omissions (framework plumbing, not design): the cookie banner,
+  the robot/crawler form, the /api/contact POST (the form shows its "Thanks"
+  line on submit), next/image's resized variants (the master files are used).
+-->
+
+<style>
+/* ==========================================================================
+   Tokens
+   ========================================================================== */
+:root {
+  --black: #243845;
+  --white: #ffffff;
+  --surface-muted: #edf4f7;
+  --surface-muted-raised: #dfebf2;
+  --foreground: #171717;
+
+  --on-inverse-muted: rgba(255, 255, 255, 0.55);
+  --on-inverse-faint: rgba(255, 255, 255, 0.52);
+  --on-inverse-meta: rgba(255, 255, 255, 0.6);
+  --border-on-inverse: rgba(255, 255, 255, 0.4);
+  --border-on-inverse-subtle: rgba(255, 255, 255, 0.3);
+
+  --on-muted-label: rgba(0, 0, 0, 0.58);
+  --on-muted-meta: rgba(0, 0, 0, 0.68);
+  --border-on-muted: rgba(0, 0, 0, 0.4);
+  --border-field: rgba(0, 0, 0, 0.35);
+
+  --scrim-from: rgba(17, 17, 17, 0);
+  --scrim-to: rgba(17, 17, 17, 0.2);
+
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --ease-entrance: cubic-bezier(0.2, 0, 0, 1);
+
+  --leading-display-tight: 0.95;
+  --leading-display: 1.1;
+  --leading-body: 1.2;
+  --tracking-nav: -0.03em;
+  --header-height: 4.0625rem;
+  --section-title: 3.4375rem;
+  --button-radius: 0.125rem;
+
+  /* Glyphs, drawn as masks so one asset takes every colour it appears in. */
+  --m-mark: url("assets/bollard-mark.svg");
+  --m-logo: url("assets/bollard-wordmark.svg");
+  --m-arrow: url("assets/northwall/hero/icon-arrow.svg");
+  --m-arrow-light: url("assets/northwall/about/icon-arrow-light.svg");
+  --m-chevron-b: url("assets/northwall/contact/chevron-b.svg");
+}
+
+/* ==========================================================================
+   Reset (Tailwind preflight equivalent)
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
+html {
+  line-height: 1.5; -webkit-text-size-adjust: 100%; tab-size: 4;
+  -webkit-tap-highlight-color: transparent;
+  font-family: "DM Sans", sans-serif;
+}
+body { line-height: inherit; }
+h1, h2, h3, p { font-size: inherit; font-weight: inherit; }
+img, svg { display: block; vertical-align: middle; }
+img { max-width: 100%; height: auto; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: inherit; }
+button, input, select, textarea {
+  font: inherit; font-feature-settings: inherit; font-variation-settings: inherit;
+  letter-spacing: inherit; color: inherit; border-radius: 0;
+  background-color: transparent; opacity: 1;
+}
+button { cursor: pointer; }
+textarea { resize: vertical; }
+::placeholder { opacity: 1; }
+[hidden]:where(:not([hidden="until-found"])) { display: none !important; }
+
+/* The adaptive scaling grid: a rem taken off a design frame lands 1:1 at that
+   frame's width. 1024–1440 holds 16px; above 1440 a script damps the scale-up.
+   Breakpoints are measured against the initial 16px, so they never move. */
+html { font-size: 16px; }
+@media (max-width: 1023px) { html { font-size: 2.083333vw; } } /* 16 * 100 / 768 */
+@media (max-width: 767px)  { html { font-size: 4.102564vw; } } /* 16 * 100 / 390 */
+
+body {
+  background: var(--white); color: var(--foreground);
+  font-family: "DM Sans", sans-serif;
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border-width: 0;
+}
+.block { display: block; }
+.fill-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; color: transparent; }
+.mask {
+  background: currentColor;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+
+/* One background for the whole page — the blocks paint none of their own. */
+.ground { position: fixed; inset: 0; z-index: -10; background-color: #000; }
+
+/* ==========================================================================
+   The word-by-word text engine. Words are flex items and the spaces are
+   dropped, so the container's column-gap carries them.
+   ========================================================================== */
+.te { position: relative; display: flex; flex-wrap: wrap; column-gap: 0.3em; }
+.te.gap-word { column-gap: 0.266em; }
+.te-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  pointer-events: none; user-select: none;
+}
+.te-words { display: contents; }
+.te-slot, .te-word { display: inline-block; }
+/* The hero's words rise out of a clip opened past the box on every side, so
+   the tight display leading never shaves an ascender or descender. */
+.te-slot.clip { clip-path: inset(-0.3em -0.2em -0.2em -0.2em); }
+/* The at-rest form a held block shows until its engine mounts. */
+.te-plain { display: flex; flex-wrap: wrap; white-space: pre-wrap; transform: translate(0); }
+
+/* Held until the opening panel has left; still in the document. */
+.held { visibility: hidden; }
+.contents { display: contents; }
+
+/* ==========================================================================
+   Shared primitives
+   ========================================================================== */
+.mk { position: absolute; display: block; width: 0.25rem; height: 0.25rem; }
+.mk.tl { left: -0.125rem; top: -0.125rem; }
+.mk.tr { right: -0.125rem; top: -0.125rem; }
+.mk.bl { left: -0.125rem; bottom: -0.125rem; }
+.mk.br { right: -0.125rem; bottom: -0.125rem; }
+
+.roll { position: relative; display: block; overflow: hidden; }
+.roll > span { display: block; }
+.roll > span + span { position: absolute; inset: 0; }
+
+.swap { position: relative; display: block; width: 0.625rem; height: 0.625rem; overflow: hidden; }
+.swap > span { position: absolute; inset: 0; display: block; }
+.arrow-glyph { display: block; width: 0.625rem; height: 0.625rem; rotate: 90deg; }
+.arrow-glyph.dark { -webkit-mask-image: var(--m-arrow); mask-image: var(--m-arrow); }
+.arrow-glyph.light { -webkit-mask-image: var(--m-arrow-light); mask-image: var(--m-arrow-light); }
+
+.arrow-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-block: 1rem; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-body); letter-spacing: var(--tracking-nav);
+}
+
+.wordmark {
+  display: block; height: 1rem; width: 6.3125rem;
+  -webkit-mask-image: var(--m-logo); mask-image: var(--m-logo);
+}
+
+/* ==========================================================================
+   The opening panel
+   ========================================================================== */
+.pl { position: fixed; inset: 0; z-index: 60; color: var(--white); }
+.pl-bg { position: absolute; inset: 0; display: block; background: var(--black); }
+.pl-slot-row {
+  pointer-events: none; position: absolute; inset-inline: 0; top: 0;
+  display: flex; height: var(--header-height); align-items: center;
+  padding-inline: 1rem; opacity: 0;
+}
+.pl-slot { display: block; height: 1rem; width: 1.625rem; }
+.pl-readout {
+  position: absolute; inset-inline: 0; bottom: 1.5rem; z-index: 30;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding-inline: 1rem; font-size: 0.75rem; text-transform: uppercase;
+  line-height: var(--leading-body); letter-spacing: var(--tracking-nav);
+  color: var(--on-inverse-muted);
+}
+/* Painted as generated content: the read-out is decoration. */
+.pl-readout > span::before { content: attr(data-text); }
+@media (min-width: 640px) { .pl-slot-row, .pl-readout { padding-inline: 2rem; } }
+@media (min-width: 1024px) { .pl-readout { bottom: 2rem; } }
+
+.pl-deck-wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.pl-deck { position: relative; display: block; width: 13.25rem; height: 16.25rem; }
+@media (min-width: 768px)  { .pl-deck { width: 18rem; height: 22rem; } }
+@media (min-width: 1024px) { .pl-deck { width: 20.625rem; height: 25rem; } }
+.pl-card { position: absolute; inset: 0; display: block; overflow: hidden; }
+
+/* The finale: a full-screen layer whose visible frame is a clip-path, the
+   photo placed by a transform — so its growth never moves layout. */
+.pl-finale { position: absolute; inset: 0; z-index: 10; display: block; overflow: hidden; }
+.pl-finale-photo { position: absolute; left: 0; top: 0; display: block; transform-origin: top left; }
+/* Match the hero's tint while the final card opens into the page. */
+.pl-finale::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(15,34,44,.68), rgba(15,34,44,.62)); }
+
+.pl-mark-wrap { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; }
+.pl-mark { position: relative; display: block; aspect-ratio: 52 / 32; width: 46vw; max-width: 22rem; }
+@media (min-width: 640px)  { .pl-mark { width: 34vw; } }
+@media (min-width: 1024px) { .pl-mark { width: 26vw; } }
+.pl-mark .glyph {
+  position: absolute; inset: 0; display: block; background: var(--white);
+  -webkit-mask-image: var(--m-mark); mask-image: var(--m-mark);
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.pl-mark .ghost { opacity: 0.2; }
+.pl-mark .clipper { position: absolute; inset: 0; display: block; }
+
+/* ==========================================================================
+   The fixed header — colour is the only thing that changes.
+   ========================================================================== */
+.hdr {
+  position: fixed; inset-inline: 0; top: 0; z-index: 50; height: var(--header-height);
+  transition: color var(--duration-normal) var(--ease-entrance), opacity var(--duration-normal) var(--ease-entrance);
+  color: var(--h-text); border-bottom: 1px dashed var(--h-rule);
+  --h-text: var(--white);
+  --h-rule: var(--border-on-inverse-subtle);
+  --h-mk-bg: var(--white);
+  --h-mk-bd: var(--border-on-inverse);
+  --h-btn-bg: var(--white);
+  --h-btn-fg: var(--black);
+}
+.hdr[data-theme="light"] {
+  --h-text: var(--black);
+  --h-rule: var(--border-on-muted);
+  --h-mk-bg: var(--black);
+  --h-mk-bd: var(--border-on-muted);
+  --h-btn-bg: var(--black);
+  --h-btn-fg: var(--white);
+}
+.hdr[data-theme="hidden"] { opacity: 0; pointer-events: none; }
+@media (min-width: 768px) { .hdr { border-bottom-width: 0; } }
+.hdr .tc { transition: color var(--duration-normal) var(--ease-entrance), background-color var(--duration-normal) var(--ease-entrance), border-color var(--duration-normal) var(--ease-entrance); }
+.hdr .mk { background: var(--h-mk-bg); border: 1px solid var(--h-mk-bd); }
+
+.hdr-row { display: flex; height: 100%; align-items: stretch; }
+.hdr-logo {
+  display: flex; width: 9rem; flex-shrink: 0; align-items: center;
+  border-style: dashed; border-color: var(--h-rule); padding-left: 1rem;
+}
+@media (min-width: 640px)  { .hdr-logo { padding-left: 2rem; } }
+@media (min-width: 768px)  { .hdr-logo { border-bottom-width: 1px; } }
+@media (min-width: 1024px) { .hdr-logo { width: 9.25rem; } }
+@media (min-width: 1440px) { .hdr-logo { width: 10.3125rem; } }
+.hdr-flex { position: relative; flex: 1 1 0%; border-style: dashed; border-color: var(--h-rule); }
+.hdr-flex .marks { display: none; }
+@media (min-width: 768px) { .hdr-flex { border-bottom-width: 1px; border-left-width: 1px; } .hdr-flex .marks { display: block; } }
+.hdr-lang {
+  position: relative; display: none; width: 4rem; flex-shrink: 0;
+  align-items: center; justify-content: center;
+  border-bottom-width: 1px; border-left-width: 1px; border-style: dashed; border-color: var(--h-rule);
+}
+@media (min-width: 768px)  { .hdr-lang { display: flex; } }
+@media (min-width: 1024px) { .hdr-lang { width: 4.5rem; } }
+@media (min-width: 1440px) { .hdr-lang { width: 5.125rem; } }
+.hdr-action {
+  position: relative; display: none; width: 9.5rem; flex-shrink: 0;
+  align-items: center; justify-content: center; gap: 0.5rem; text-align: center;
+  font-size: 0.875rem; text-transform: uppercase; line-height: 1;
+  background-color: var(--h-btn-bg); color: var(--h-btn-fg);
+}
+@media (min-width: 768px)  { .hdr-action { display: flex; } }
+@media (min-width: 1024px) { .hdr-action { width: 10.125rem; } }
+@media (min-width: 1440px) { .hdr-action { width: 11.625rem; } }
+
+.hdr-nav {
+  position: absolute; top: 0; bottom: 0; left: calc(50% - 2.25rem);
+  display: none; align-items: center; translate: -50% 0;
+}
+@media (min-width: 768px)  { .hdr-nav { display: flex; } }
+@media (min-width: 1024px) { .hdr-nav { left: calc(50% - 2.6875rem); } }
+@media (min-width: 1440px) { .hdr-nav { left: 50%; } }
+.hdr-nav ul { display: flex; align-items: center; gap: 1rem; }
+@media (min-width: 1024px) { .hdr-nav ul { gap: 2rem; } }
+@media (min-width: 1440px) { .hdr-nav ul { gap: 2.5rem; } }
+.nav-link { font-size: 0.875rem; text-transform: uppercase; line-height: var(--leading-body); letter-spacing: var(--tracking-nav); }
+
+/* Language switcher */
+.lang { position: relative; }
+.lang-btn {
+  display: flex; align-items: center; gap: 0.375rem; font-size: 0.875rem;
+  text-transform: uppercase; line-height: var(--leading-body); letter-spacing: var(--tracking-nav);
+}
+.lang-chev {
+  display: block; height: 0.5rem; width: 0.28125rem; rotate: 90deg;
+  -webkit-mask-image: var(--m-chevron-b); mask-image: var(--m-chevron-b);
+}
+.lang-bridge { position: absolute; inset-inline: 0; top: 100%; height: 1rem; }
+.lang-list {
+  position: absolute; left: 50%; top: 100%; z-index: 10; margin-top: 1rem;
+  display: flex; width: 7rem; flex-direction: column; translate: -50% 0;
+  overscroll-behavior: contain; background: var(--black); color: var(--white);
+}
+.lang-list a {
+  display: block; padding: 0.75rem 1rem; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-body); letter-spacing: var(--tracking-nav);
+  transition: color var(--duration-fast) cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--on-inverse-faint);
+}
+.lang-list a[aria-current] { color: var(--white); }
+.lang-list a:hover { color: var(--white); }
+.lang-list:hover a[aria-current]:not(:hover) { color: var(--on-inverse-faint); }
+
+.burger {
+  position: absolute; right: 0; top: 0; display: flex; height: var(--header-height);
+  width: 4.5rem; align-items: center; justify-content: center;
+  border-style: dashed; border-color: var(--h-rule);
+}
+@media (min-width: 768px) { .burger { display: none; } }
+.burger-box { position: relative; display: block; height: 1rem; width: 1.5rem; }
+.burger-box > span { position: absolute; inset-inline: 0; top: 0; display: block; height: 1px; background: currentColor; }
+
+.menu {
+  position: fixed; inset: 0; top: var(--header-height); z-index: 40;
+  display: flex; flex-direction: column; justify-content: space-between;
+  background: var(--black); color: var(--white); padding: 2rem 1rem 2.5rem;
+}
+@media (min-width: 768px) { .menu { display: none; } }
+.menu li { border-top: 1px solid var(--border-on-inverse-subtle); }
+.menu li:last-child { border-bottom: 1px solid var(--border-on-inverse-subtle); }
+.menu-lang {
+  margin-top: 1.5rem; display: flex; align-items: center; justify-content: space-between;
+  font-size: 0.875rem; text-transform: uppercase; line-height: var(--leading-body);
+  letter-spacing: var(--tracking-nav); color: var(--on-inverse-muted);
+}
+.menu-lang .lang { color: var(--white); }
+.menu-cta {
+  display: flex; width: 100%; align-items: center; justify-content: center; gap: 0.5rem;
+  background: var(--white); color: var(--black); padding: 1rem;
+  font-size: 0.875rem; text-transform: uppercase; line-height: 1;
+}
+
+/* ==========================================================================
+   1 — HERO
+   ========================================================================== */
+.hero {
+  position: relative; display: flex; width: 100%; flex-direction: column; overflow: hidden;
+  padding: 5.25rem 0 1.5rem; color: var(--white);
+}
+@media (min-width: 768px) {
+  .hero {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start; column-gap: 1.5rem; padding: 6.25rem 0 2rem;
+  }
+}
+@media (min-width: 1024px) { .hero { display: block; height: 100lvh; padding: 0; } }
+
+.hero-title { order: 1; padding-inline: 1rem; }
+@media (min-width: 768px) { .hero-title { grid-column-start: 1; grid-row-start: 1; padding-left: 1.5rem; padding-right: 0; } }
+@media (min-width: 1024px) {
+  .hero-title { pointer-events: none; position: absolute; inset-inline: 0; top: 5.625rem; z-index: 10; padding-inline: 1.5rem; }
+}
+@media (min-width: 1440px) { .hero-title { top: 6.1875rem; padding-inline: 2rem; } }
+.hero-title h1 {
+  width: 100%; justify-content: center; text-align: center;
+  font-size: 1.75rem; line-height: var(--leading-display-tight);
+}
+@media (min-width: 768px)  { .hero-title h1 { width: 26rem; justify-content: flex-start; text-align: left; font-size: 2.875rem; } }
+@media (min-width: 1024px) { .hero-title h1 { width: 100%; max-width: 24rem; font-size: 3rem; } }
+@media (min-width: 1440px) { .hero-title h1 { max-width: 33rem; font-size: 4.5rem; } }
+
+.hero-tagline { order: 2; padding: 0 1rem 1rem; }
+@media (min-width: 768px) {
+  .hero-tagline { grid-column: span 2 / span 2; grid-row-start: 5; justify-self: end; padding: 3.5rem 1.5rem 0; }
+}
+@media (min-width: 1024px) {
+  .hero-tagline { pointer-events: none; position: absolute; bottom: 2rem; right: 1.5rem; z-index: 10; order: 0; padding: 0; }
+}
+@media (min-width: 1440px) { .hero-tagline { right: 2rem; } }
+.hero-tagline p {
+  justify-content: center; text-align: center;
+  font-size: 1.75rem; line-height: var(--leading-display-tight);
+}
+@media (min-width: 768px)  { .hero-tagline p { justify-content: flex-end; text-align: right; font-size: 2.875rem; } }
+@media (min-width: 1024px) { .hero-tagline p { font-size: 2.75rem; } }
+@media (min-width: 1440px) { .hero-tagline p { font-size: 4.5rem; } }
+
+/* The stage — what the opening panel's last card grows into. */
+.hero-stage {
+  position: relative; order: 3; margin: 1rem 1rem 0; aspect-ratio: 358 / 448; overflow: hidden;
+}
+@media (min-width: 768px) {
+  .hero-stage { grid-column: span 2 / span 2; grid-row-start: 2; margin: 2.5rem 1.5rem 0; aspect-ratio: 720 / 495; }
+}
+@media (min-width: 1024px) {
+  .hero-stage { position: absolute; inset: 0; z-index: 0; margin: 0; aspect-ratio: auto; overflow: visible; }
+}
+.hero-backdrop { position: absolute; inset: 0; overflow: hidden; }
+.abs-fill { position: absolute; inset: 0; }
+/* Taller than the frame and bottom-aligned, so the parallax can sink it
+   without exposing the top edge — the same layer the panel's finale draws. */
+.finale-layer { position: absolute; inset-inline: 0; bottom: 0; height: 130%; }
+
+.stats-photo {
+  position: absolute; inset-inline: 0; top: 50%; z-index: 10; translate: 0 -50%;
+  padding-inline: 1rem; text-align: center; font-size: 1rem; line-height: var(--leading-body);
+}
+@media (min-width: 768px) { .stats-photo { display: none; } }
+.stats-md { display: none; text-align: right; font-size: 1.125rem; line-height: var(--leading-body); }
+@media (min-width: 768px) {
+  .stats-md { grid-column-start: 2; grid-row-start: 1; display: block; align-self: end; justify-self: end; padding-right: 1.5rem; }
+}
+@media (min-width: 1024px) { .stats-md { display: none; } }
+.stats-lg { display: none; width: 13.125rem; text-align: right; line-height: var(--leading-body); }
+@media (min-width: 1024px) { .stats-lg { display: block; font-size: 1.125rem; } }
+.muted-inv { color: var(--on-inverse-muted); }
+
+.hero-mid { display: contents; }
+@media (min-width: 1024px) { .hero-mid { position: absolute; inset-inline: 0; top: 50%; z-index: 10; display: block; padding-inline: 1.5rem; } }
+@media (min-width: 1440px) { .hero-mid { padding-inline: 2rem; } }
+.hero-rule { order: 5; margin: 1.5rem 1rem 0; display: block; height: 1px; width: calc(100% - 2rem); }
+@media (min-width: 768px)  { .hero-rule { grid-column: span 2 / span 2; grid-row-start: 3; margin: 1.5rem 1.5rem 0; width: calc(100% - 3rem); } }
+@media (min-width: 1024px) { .hero-rule { margin: 0; width: 100%; } }
+.hero-copy { order: 4; display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem 1rem 0; }
+@media (min-width: 768px)  { .hero-copy { grid-column-start: 1; grid-row-start: 4; padding: 1.5rem 0 0 1.5rem; } }
+@media (min-width: 1024px) { .hero-copy { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 0 0; } }
+.hero-intro {
+  width: 100%; justify-content: center; text-align: center;
+  font-size: 1rem; line-height: var(--leading-body);
+}
+@media (min-width: 768px)  { .hero-intro { width: 15.625rem; justify-content: flex-start; text-align: left; } }
+@media (min-width: 1024px) { .hero-intro { width: auto; max-width: 17.0625rem; font-size: 1.125rem; } }
+
+.hero-links { order: 5; padding: 1.5rem 1rem 0; }
+@media (min-width: 768px)  { .hero-links { grid-column-start: 2; grid-row-start: 4; justify-self: end; align-self: end; padding-right: 1.5rem; padding-top: 1.5rem; } }
+@media (min-width: 1024px) { .hero-links { position: absolute; bottom: 2rem; left: 1.5rem; z-index: 10; order: 0; padding: 0; } }
+@media (min-width: 1440px) { .hero-links { left: 2rem; } }
+.hero-links ul { display: flex; width: 100%; flex-shrink: 0; gap: 0.5rem; }
+@media (min-width: 768px)  { .hero-links ul { width: auto; flex-wrap: nowrap; gap: 0.75rem; } }
+@media (min-width: 1024px) { .hero-links ul { flex-wrap: wrap; gap: 1rem; } }
+.hero-links li { flex: 1 1 0%; }
+@media (min-width: 768px) { .hero-links li { flex: none; } }
+.cta {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--border-on-inverse); white-space: nowrap;
+  padding: 0.875rem 1rem; font-size: 0.875rem; text-transform: uppercase; line-height: 1;
+  color: var(--white);
+}
+@media (min-width: 768px)  { .cta { padding: 1rem 1.25rem; } }
+@media (min-width: 1024px) { .cta { padding-block: 0.875rem; font-size: 1rem; } }
+@media (min-width: 1440px) { .cta { padding: 1rem 1.5rem; } }
+.cta-fill { position: absolute; inset: 0; transform-origin: bottom; background: var(--white); }
+.cta .roll > span + span { color: var(--black); }
+.cta .mk { background: var(--white); }
+
+/* ==========================================================================
+   2 — ABOUT
+   ========================================================================== */
+.about { position: relative; min-height: 100lvh; width: 100%; overflow: hidden; color: var(--black); }
+@media (min-width: 640px) { .about { height: 100lvh; } }
+.about-band {
+  display: flex; width: 100%; flex-direction: column; align-items: center;
+  gap: 2rem; padding: 6rem 1rem 2.5rem;
+}
+@media (min-width: 768px) {
+  .about-band {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start;
+    column-gap: 1.5rem; row-gap: 1.5rem; padding: 5rem 1.5rem 2.5rem;
+  }
+}
+@media (min-width: 1024px) {
+  .about-band {
+    position: absolute; left: 0; right: 0; top: 50%; bottom: auto; display: block;
+    height: 100%; gap: 0; padding: 0; translate: 0 -50%;
+  }
+}
+@media (min-width: 1440px) { .about-band { height: 50rem; } }
+.about-head {
+  pointer-events: none; z-index: 10; display: flex; width: 100%; max-width: 20rem;
+  flex-direction: column; align-items: center; gap: 1.125rem;
+}
+@media (min-width: 768px)  { .about-head { max-width: 32rem; grid-column: span 2 / span 2; justify-self: center; } }
+@media (min-width: 1024px) {
+  .about-head { max-width: none; position: absolute; left: 50%; top: 5.25rem; width: 28rem; gap: 1.75rem; translate: -50% 0; }
+}
+@media (min-width: 1440px) { .about-head { gap: 1.125rem; top: 6.1875rem; } }
+.eyebrow { text-align: center; font-size: 0.75rem; text-transform: uppercase; line-height: var(--leading-body); }
+@media (min-width: 768px)  { .eyebrow { font-size: 0.875rem; } }
+@media (min-width: 1024px) { .eyebrow { font-size: 0.75rem; } }
+.about-head h2 {
+  width: 100%; justify-content: center; text-align: center; font-size: 2rem;
+  text-transform: capitalize; line-height: var(--leading-display-tight);
+}
+@media (min-width: 768px)  { .about-head h2 { font-size: 2.75rem; } }
+@media (min-width: 1440px) { .about-head h2 { font-size: var(--section-title); } }
+
+.about-show { position: relative; z-index: 10; width: 100%; }
+@media (min-width: 768px) { .about-show { display: contents; } }
+.about-frame { position: relative; z-index: 10; display: block; aspect-ratio: 358 / 458; width: 100%; overflow: hidden; }
+@media (min-width: 768px) { .about-frame { grid-column: span 2 / span 2; aspect-ratio: 720 / 628; } }
+@media (min-width: 1024px) {
+  .about-frame {
+    margin-top: 0; position: absolute; left: 50%; top: calc(50% + 3.3125rem);
+    aspect-ratio: auto; height: 24.625rem; width: 20rem; translate: -50% -50%;
+  }
+}
+@media (min-width: 1440px) { .about-frame { top: calc(50% + 4.4375rem); height: 25.5rem; width: 20.8125rem; } }
+.center-abs { pointer-events: none; position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+.btn-black {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  background: var(--black); padding: 1rem 1.5rem; font-size: 0.875rem;
+  text-transform: uppercase; line-height: 1; color: var(--white);
+}
+.about-topics {
+  position: absolute; bottom: 1.5rem; left: 1rem; z-index: 10; display: flex;
+  flex-direction: column; gap: 0.25rem; font-size: 1rem; line-height: var(--leading-body); color: var(--white);
+}
+@media (min-width: 768px) {
+  .about-topics { position: static; grid-column-start: 1; margin-top: 1.5rem; align-self: end; font-size: 1.125rem; color: var(--black); }
+}
+@media (min-width: 1024px) { .about-topics { position: absolute; bottom: 1.5rem; left: 1.5rem; margin-top: 0; } }
+@media (min-width: 1440px) { .about-topics { bottom: 2rem; left: 2rem; } }
+.about-mission { z-index: 10; width: 100%; }
+@media (min-width: 768px)  { .about-mission { grid-column-start: 2; margin-top: 1.5rem; align-self: end; } }
+@media (min-width: 1024px) { .about-mission { position: absolute; bottom: 1.5rem; left: 40.6875rem; margin-top: 0; width: 19.5rem; } }
+@media (min-width: 1440px) { .about-mission { bottom: 2rem; left: calc(50% + 5.9375rem); width: 23.625rem; } }
+.about-mission p { width: 100%; justify-content: center; text-align: center; font-size: 1rem; line-height: var(--leading-body); }
+@media (min-width: 768px)  { .about-mission p { justify-content: flex-start; text-align: left; font-size: 1.25rem; } }
+@media (min-width: 1024px) {
+  .about-mission p { font-size: 1.125rem; }
+  /* The first line is indented 83px to clear the photo: words are flex items,
+     where text-indent does nothing, so the indent is a leading spacer whose
+     width drops the word gap. */
+  .about-mission p::before { content: ""; display: block; height: 1px; width: calc(4.3125rem - 0.266em); }
+}
+@media (min-width: 1440px) {
+  .about-mission p { font-size: 1.5rem; }
+  .about-mission p::before { width: calc(5.1875rem - 0.266em); }
+}
+
+/* ==========================================================================
+   3 — PROJECTS
+   ========================================================================== */
+.projects { position: relative; width: 100%; overflow: hidden; padding-block: 6rem; }
+@media (min-width: 1024px) { .projects { height: 100lvh; padding-block: 0; } }
+.projects-row { display: flex; flex-direction: column; gap: 0.75rem; padding-inline: 1rem; }
+@media (min-width: 768px) {
+  .projects-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding-inline: 1.5rem; }
+}
+@media (min-width: 1024px) {
+  .projects-row {
+    position: absolute; left: 1.5rem; right: 1.5rem; top: 2.25rem; display: flex;
+    flex-direction: row; align-items: flex-start; gap: 0.5rem; padding-inline: 0;
+  }
+}
+@media (min-width: 1440px) { .projects-row { left: 2.5rem; right: 2.5rem; top: 6.1875rem; gap: 0.75rem; } }
+.card { position: relative; display: block; aspect-ratio: 358 / 430; width: 100%; flex-shrink: 0; overflow: hidden; }
+@media (min-width: 768px) {
+  .card { aspect-ratio: 352 / 435; }
+  .card:last-child { grid-column: span 2 / span 2; aspect-ratio: 720 / 392; }
+}
+@media (min-width: 1024px) {
+  .card, .card:last-child { aspect-ratio: auto; height: 18rem; width: auto; min-width: 0; flex: 1 1 0%; }
+  .card.c1 { height: 29.375rem; } .card.c2 { height: 37.5rem; } .card.c3 { height: 29.3125rem; }
+}
+@media (min-width: 1440px) { .card.c1 { height: 32.75rem; } .card.c2 { height: 41.8125rem; } .card.c3 { height: 32.75rem; } }
+.card-mask { position: absolute; inset: 0; display: block; }
+.card-layer { position: absolute; inset-inline: 0; top: -18%; height: 136%; }
+.card-settle { position: absolute; inset: 0; display: block; }
+.scrim { position: absolute; inset-inline: 0; bottom: 0; height: 5.875rem; }
+.scrim.b1 {
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 35%, rgba(0,0,0,0) 100%);
+          mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 35%, rgba(0,0,0,0) 100%);
+}
+.scrim.b2 {
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.6) 30%, rgba(0,0,0,0) 62%);
+          mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.6) 30%, rgba(0,0,0,0) 62%);
+}
+.scrim.grad { background-image: linear-gradient(to bottom, var(--scrim-from), var(--scrim-to)); }
+.card-label { position: absolute; inset-inline: 0; bottom: 1.5rem; display: block; padding-inline: 0.625rem; }
+.card-label .te {
+  width: 100%; justify-content: center; text-align: center; font-size: 1.25rem;
+  text-transform: uppercase; line-height: var(--leading-body); color: var(--white);
+}
+.card-btn { display: none; }
+@media (min-width: 1440px) { .card-btn { display: block; } }
+
+/* ==========================================================================
+   4 — PROCESS
+   ========================================================================== */
+.process { position: relative; height: 37.5rem; width: 100%; overflow: hidden; }
+@media (min-width: 768px)  { .process { height: 53.625rem; } }
+@media (min-width: 1024px) { .process { height: 100lvh; } }
+.process-eyebrow {
+  position: absolute; left: 50%; top: 5.5rem; z-index: 20; translate: -50% 0;
+  text-align: center; font-size: 0.75rem; text-transform: uppercase;
+  line-height: var(--leading-body); color: var(--white);
+}
+@media (min-width: 768px)  { .process-eyebrow { font-size: 0.875rem; } }
+@media (min-width: 1024px) { .process-eyebrow { top: 6.1875rem; font-size: 0.75rem; } }
+.process-stage { position: absolute; inset: 0; }
+.process-photo-box { pointer-events: none; position: absolute; left: 50%; top: 50%; z-index: 10; translate: -50% -50%; }
+.process-frame { position: relative; height: 16.25rem; width: 13.25rem; overflow: hidden; }
+@media (min-width: 640px)  { .process-frame { height: 20rem; width: 16.5rem; } }
+@media (min-width: 768px)  { .process-frame { height: 30rem; width: 28.125rem; } }
+@media (min-width: 1024px) { .process-frame { height: 25rem; width: 20.625rem; } }
+/* Centred with flex, not a transform: a transformed ancestor would open a
+   stacking context and trap the active step's z-index below the photo. */
+.process-steps { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.process-steps ul {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding-inline: 1rem;
+  text-align: center; font-size: 1.375rem; line-height: var(--leading-display-tight); color: var(--white);
+}
+@media (min-width: 640px)  { .process-steps ul { gap: 0.6875rem; font-size: 2.5rem; } }
+@media (min-width: 768px)  { .process-steps ul { font-size: 3.5rem; } }
+@media (min-width: 1024px) { .process-steps ul { white-space: nowrap; font-size: 4.5rem; } }
+.process-steps li { cursor: pointer; z-index: 0; }
+.process-steps li.on { position: relative; z-index: 20; }
+.process-caption {
+  position: absolute; bottom: 2rem; left: 50%; z-index: 20;
+  width: calc(100% - 2rem); max-width: 16.25rem; translate: -50% 0;
+}
+@media (min-width: 768px)  { .process-caption { max-width: 17.75rem; } }
+@media (min-width: 1024px) { .process-caption { bottom: auto; top: calc(50% + 18.875rem); max-width: none; width: var(--cap-w); } }
+.process-caption p {
+  width: 100%; justify-content: center; text-align: center;
+  font-size: 1.125rem; line-height: var(--leading-body); color: var(--white);
+}
+@media (min-width: 640px)  { .process-caption p { font-size: 1rem; } }
+@media (min-width: 768px)  { .process-caption p { font-size: 1.125rem; } }
+
+/* ==========================================================================
+   5 — TEAM
+   ========================================================================== */
+.team { position: relative; width: 100%; overflow: hidden; padding: 6rem 0 4rem; color: var(--black); }
+@media (min-width: 768px)  { .team { padding-top: 8.4375rem; padding-bottom: 4.6875rem; } }
+@media (min-width: 1024px) { .team { padding-top: 7.75rem; padding-bottom: 13.1875rem; } }
+@media (min-width: 1440px) { .team { padding-top: 8.125rem; padding-bottom: 6rem; } }
+.team-head { position: relative; padding-inline: 1rem; }
+@media (min-width: 768px)  { .team-head { padding-inline: 1.5rem; } }
+@media (min-width: 1440px) { .team-head { padding-inline: 2rem; } }
+.team-head h2 {
+  width: 100%; justify-content: flex-start; text-align: left; font-size: 2.25rem;
+  text-transform: capitalize; line-height: var(--leading-display-tight);
+}
+@media (min-width: 640px)  { .team-head h2 { font-size: 3rem; } }
+@media (min-width: 768px)  { .team-head h2 { width: 23rem; font-size: 2.5rem; } }
+@media (min-width: 1024px) { .team-head h2 { width: 24rem; font-size: 2.75rem; } }
+@media (min-width: 1440px) { .team-head h2 { width: 30.3125rem; font-size: var(--section-title); } }
+.team-intro { margin-top: 1.5rem; width: 100%; }
+@media (min-width: 768px)  { .team-intro { position: absolute; bottom: 0; left: 28.125rem; right: auto; top: auto; margin-top: 0; width: 18.125rem; } }
+@media (min-width: 1024px) { .team-intro { left: auto; right: 1.5rem; width: 21rem; } }
+@media (min-width: 1440px) { .team-intro { bottom: auto; right: 2rem; top: 2.40625rem; width: 20.9375rem; } }
+.team-intro p { width: 100%; justify-content: flex-start; text-align: left; font-size: 1rem; line-height: var(--leading-body); }
+@media (min-width: 768px) { .team-intro p { font-size: 1.125rem; } }
+
+.roster { position: relative; margin-top: 2rem; }
+@media (min-width: 768px)  { .roster { margin-top: 3.375rem; } }
+@media (min-width: 1024px) { .roster { margin-top: 1.96875rem; } }
+.roster > ul { display: flex; flex-direction: column; gap: 0.75rem; }
+@media (min-width: 768px)  { .roster > ul { gap: 1.4375rem; } }
+@media (min-width: 1024px) { .roster > ul { gap: 0.75rem; } }
+.row {
+  position: relative; display: flex; width: 100%; flex-direction: column; gap: 1.5rem;
+  background: var(--surface-muted-raised); padding: 1rem; color: var(--black);
+}
+@media (min-width: 640px)  { .row { padding: 1.5rem; } }
+@media (min-width: 768px)  { .row { height: 13.5rem; flex-direction: row; align-items: flex-end; gap: 0; } }
+@media (min-width: 1024px) { .row { height: 12.1875rem; gap: 2.75rem; padding: 1.5rem; } }
+@media (min-width: 1440px) { .row { height: 12.6875rem; align-items: flex-end; gap: 0; padding: 2rem; } }
+.row-copy { display: flex; width: 100%; flex-direction: column; gap: 1.125rem; }
+@media (min-width: 768px)  { .row-copy { width: 19rem; flex-shrink: 0; } }
+@media (min-width: 1024px) { .row-copy { width: 17.5rem; } }
+@media (min-width: 1440px) { .row-copy { width: 17.3125rem; } }
+.row-head { display: flex; flex-direction: column; gap: 0.75rem; }
+.row-eyebrow { white-space: pre-wrap; font-size: 0.75rem; text-transform: uppercase; line-height: var(--leading-body); color: var(--on-muted-label); }
+.row-name { font-size: 1.5rem; font-weight: 500; line-height: var(--leading-body); }
+.row-bio { justify-content: flex-start; text-align: left; font-size: 1.125rem; line-height: var(--leading-body); }
+.row-pair { display: flex; align-items: flex-end; gap: 1.5rem; }
+@media (min-width: 768px) { .row-pair { display: contents; } }
+.row-portrait { position: relative; aspect-ratio: 43 / 35; width: 10.625rem; flex-shrink: 0; overflow: hidden; }
+@media (min-width: 768px)  { .row-portrait { margin-left: 0; margin-right: 0.8125rem; width: 10.6875rem; } }
+@media (min-width: 1024px) { .row-portrait { margin-inline: 0; width: 9.5rem; } }
+@media (min-width: 1440px) { .row-portrait { display: none; } }
+.row-meta {
+  display: flex; flex-direction: column; gap: 0.5rem; white-space: nowrap;
+  font-size: 0.875rem; line-height: var(--leading-body);
+}
+@media (min-width: 640px)  { .row-meta { font-size: 1rem; } }
+@media (min-width: 768px)  { .row-meta { width: 10.875rem; } }
+@media (min-width: 1024px) {
+  .row-meta { width: auto; flex: 1 1 0%; flex-direction: row; align-items: center; justify-content: space-between; gap: 1.5rem; font-size: 1.125rem; }
+}
+@media (min-width: 1440px) { .row-meta { position: absolute; bottom: 2rem; left: 45.375rem; right: 2rem; width: auto; flex: none; } }
+.row-role { display: flex; align-items: center; gap: 0.5rem; }
+.row-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border: 1px solid var(--border-on-muted); background: var(--black); }
+.row-exp { white-space: nowrap; }
+@media (min-width: 1440px) { .row-exp { width: 20.9375rem; } }
+.on-muted-meta { color: var(--on-muted-meta); }
+.count-box { position: relative; display: inline-block; }
+.count-box > .ghost { visibility: hidden; }
+.count-box > .live { position: absolute; inset: 0; }
+.travel { pointer-events: none; position: absolute; inset: 0; display: none; }
+@media (min-width: 1440px) { .travel { display: block; } }
+.travel-slot { position: absolute; left: 23.6875rem; top: 2rem; height: 8.6875rem; width: 10.4375rem; }
+
+/* ==========================================================================
+   6 — CONTACT
+   ========================================================================== */
+.contact { position: relative; display: flex; width: 100%; flex-direction: column; overflow: hidden; padding-bottom: 2.5rem; }
+@media (min-width: 768px)  { .contact { display: block; height: 47.75rem; padding-bottom: 0; } }
+@media (min-width: 1024px) { .contact { height: 100lvh; } }
+@media (min-width: 1440px) { .contact { min-height: 50rem; } }
+.contact-top { position: relative; order: 1; padding-bottom: 2rem; }
+@media (min-width: 768px) { .contact-top { display: contents; } }
+.contact-photo { position: absolute; inset: 0; z-index: 0; display: block; overflow: hidden; }
+.contact-layer { position: absolute; inset-inline: 0; top: 0; display: block; height: 120%; }
+.contact-rail { position: absolute; top: 0; bottom: 0; left: 0; display: none; width: 15rem; background: var(--black); }
+@media (min-width: 768px)  { .contact-rail { display: block; } }
+@media (min-width: 1440px) { .contact-rail { width: 17.625rem; } }
+.contact-logo { order: 1; position: relative; z-index: 10; margin-top: 2rem; display: block; padding-inline: 1rem; }
+@media (min-width: 768px)  { .contact-logo { position: absolute; left: 1.5rem; top: 2rem; margin-top: 0; padding-inline: 0; } }
+@media (min-width: 1024px) { .contact-logo { left: 2rem; } }
+.contact-logo .wordmark { background: var(--white); }
+
+.contact-nav { order: 3; position: relative; z-index: 10; margin-top: 2.5rem; width: 100%; padding-inline: 1rem; }
+@media (min-width: 768px)  { .contact-nav { position: absolute; left: 1.5rem; top: 7rem; margin-top: 0; width: 12rem; padding-inline: 0; } }
+@media (min-width: 1440px) { .contact-nav { left: 2rem; width: 13.6875rem; } }
+.contact-nav ul { display: flex; flex-direction: column; }
+.contact-nav li { border-top: 1px solid var(--border-on-inverse-subtle); }
+.contact-nav li:last-child { border-bottom: 1px solid var(--border-on-inverse-subtle); }
+.contact-nav .arrow-row { color: var(--white); }
+
+.contact-details {
+  order: 4; position: relative; z-index: 10; margin-top: 2.5rem; display: flex; width: 100%;
+  flex-direction: column; gap: 0.75rem; padding-inline: 1rem; font-size: 0.875rem;
+  text-transform: uppercase; font-style: normal; line-height: var(--leading-body);
+  letter-spacing: var(--tracking-nav); color: var(--white);
+}
+@media (min-width: 768px)  { .contact-details { position: absolute; bottom: 2.5rem; left: 1.5rem; margin-top: 0; width: 12rem; padding-inline: 0; } }
+@media (min-width: 1440px) { .contact-details { bottom: 2rem; left: 2rem; width: 13.6875rem; } }
+
+.contact-legal {
+  order: 5; position: relative; z-index: 10; margin-top: 2rem; display: flex; flex-direction: column;
+  gap: 0.25rem; padding-inline: 1rem; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-body); letter-spacing: var(--tracking-nav); color: var(--on-inverse-meta);
+}
+@media (min-width: 768px) { .contact-legal { display: contents; } }
+.legal-links { display: flex; align-items: center; gap: 0.5rem; }
+.legal-links > span { display: flex; align-items: center; gap: 0.5rem; }
+@media (min-width: 768px)  { .legal-links { position: absolute; bottom: 2rem; left: 16.5rem; } }
+@media (min-width: 1024px) { .legal-links { left: 32.5rem; } }
+@media (min-width: 1440px) { .legal-links { left: calc(100% - 37.375rem); } }
+.legal-copy { white-space: nowrap; }
+@media (min-width: 768px)  { .legal-copy { position: absolute; bottom: 2rem; right: 1.5rem; left: auto; } }
+@media (min-width: 1440px) { .legal-copy { right: 2rem; } }
+
+.form {
+  position: relative; z-index: 10; margin: 1.5rem 1rem 0; display: flex; flex-direction: column;
+  gap: 1rem; background: var(--white); padding: 1.25rem;
+}
+@media (min-width: 768px) {
+  .form { position: absolute; bottom: 4.75rem; left: 16.5rem; right: 1.5rem; top: 1.5rem; margin: 0; padding: 1.5rem; }
+}
+@media (min-width: 1024px) { .form { padding: 2rem; bottom: 4.5rem; left: 32.5rem; top: 1.5rem; } }
+@media (min-width: 1440px) { .form { bottom: 5.0625rem; left: auto; top: 2rem; right: 2rem; width: 35.375rem; } }
+.form-fields { display: flex; flex-direction: column; gap: 1.5rem; }
+@media (min-width: 768px) { .form-fields { min-height: 0; flex: 1 1 0%; } }
+.field {
+  width: 100%; border-bottom: 1px solid var(--border-field); background: transparent;
+  padding-block: 0.75rem; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-display); color: var(--black); outline: none;
+  transition: border-color var(--duration-fast) var(--ease-entrance), color var(--duration-fast) var(--ease-entrance), background-color var(--duration-fast) var(--ease-entrance);
+}
+.field::placeholder { color: var(--black); }
+.field:focus { border-color: var(--black); }
+select.field { appearance: none; -webkit-appearance: none; }
+.phone-row { border-bottom: 1px solid var(--border-field); padding-block: 0.75rem; }
+.phone-line { display: flex; height: 1.1875rem; align-items: center; gap: 0.5rem; }
+.phone-sep { font-size: 0.875rem; line-height: 1.4286; color: var(--black); }
+.phone-input {
+  width: 100%; background: transparent; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-display); color: var(--black); outline: none;
+}
+.phone-input::placeholder { color: var(--black); }
+.country { position: relative; }
+.country-btn {
+  display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-display); color: var(--black);
+}
+.country-flag { height: 0.778rem; width: 1.1875rem; }
+.chev-img { height: 0.5rem; width: 0.28125rem; rotate: 90deg; }
+.country-list {
+  position: absolute; left: 0; top: 100%; z-index: 20; margin-top: 0.75rem;
+  display: flex; max-height: 16rem; width: 14rem; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain; background: var(--black); color: var(--white);
+}
+.country-list button {
+  display: flex; width: 100%; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
+  text-align: left; font-size: 0.875rem; text-transform: uppercase;
+  line-height: var(--leading-body); letter-spacing: var(--tracking-nav); color: var(--on-inverse-faint);
+}
+.country-list button[aria-current] { color: inherit; }
+.tabular { font-variant-numeric: tabular-nums; }
+.select-wrap { position: relative; display: block; }
+.select-chev { pointer-events: none; position: absolute; right: 0; top: 50%; translate: 0 -50%; }
+.message-label { display: block; }
+@media (min-width: 768px) { .message-label { display: flex; min-height: 0; flex: 1 1 0%; flex-direction: column; } }
+.message { display: block; height: 13.0625rem; resize: none; padding-bottom: 0; }
+@media (min-width: 768px)  { .message { height: 100%; min-height: 0; } }
+@media (min-width: 1440px) { .message { min-height: 13.0625rem; } }
+.agree {
+  margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.75rem; line-height: 1; color: var(--black);
+}
+@media (min-width: 768px)  { .agree { white-space: nowrap; } }
+@media (min-width: 1024px) { .agree { margin-top: 0.5rem; } }
+@media (min-width: 1440px) { .agree { margin-top: 0; white-space: normal; } }
+.agree input {
+  width: 0.75rem; height: 0.75rem; flex-shrink: 0; appearance: none; -webkit-appearance: none;
+  border: 0.3px solid var(--black);
+}
+.agree input:checked { background: var(--black); }
+.underline { text-decoration-line: underline; }
+.agree .as-link { display: none; }
+@media (min-width: 1440px) { .agree .as-text { display: none; } .agree .as-link { display: inline; } }
+.submit {
+  display: flex; width: 100%; align-items: center; justify-content: center; gap: 0.5rem;
+  border-radius: var(--button-radius); background: var(--black); padding: 1rem;
+  font-size: 0.875rem; font-weight: 500; text-transform: uppercase; line-height: 1; color: var(--white);
+}
+.form-status { font-size: 0.75rem; line-height: var(--leading-body); color: var(--black); }
+.hero-backdrop::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(18,38,49,.64),rgba(25,46,58,.26))}.hdr-lang,.menu-lang{display:none!important}.hdr-action{background:#a6412f!important;color:#fff!important}.wordmark{width:7.3rem;height:1.15rem}.social-inline{display:flex;gap:14px;margin-top:1.5rem}.social-inline button{border:1px solid #ffffff88;border-radius:50%;width:36px;height:36px;color:white;font-size:13px}.social-inline button:focus-visible,a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #d76a52;outline-offset:3px}dialog{border:0;border-radius:12px;padding:2rem;max-width:24rem}dialog::backdrop{background:#182b37a8}dialog h2{font-size:2rem;margin-bottom:1rem}dialog p{margin-bottom:1.5rem}</style>
+<link rel="stylesheet" href="shared.css?v=20261102d"><link rel="stylesheet" href="assets/scrolltide/bollard.css?v=20261102e"><link rel="stylesheet" href="page-transition.css?v=20261102a"><script src="page-transition.js?v=20261102a"></script></head>
+
+<body>
+<!-- Without scripting the curtain would never lift, so it only exists for
+     browsers that can take it away again. -->
+<noscript><style>[data-preloader]{display:none}</style></noscript>
+
+<!-- ======================================================================
+     The opening panel. The monogram is the gauge: it fills white from the
+     bottom while photos are dealt beneath it. The last card is the hero's
+     photo — it grows out of the centre until it covers the hero exactly, the
+     mark flies into the header's logo slot, and the panel fades over a hero
+     that already looks identical to it.
+     ====================================================================== -->
+<div class="pl" data-preloader role="status" aria-live="polite" id="pl">
+  <span class="sr-only">Loading</span>
+  <span class="pl-bg" aria-hidden="true"></span>
+
+  <span class="pl-slot-row" aria-hidden="true"><span class="pl-slot" id="pl-slot"></span></span>
+
+  <span class="pl-readout" aria-hidden="true" id="pl-readout">
+    <span data-text="Loading"></span><span data-text="00%" id="pl-pct"></span>
+  </span>
+
+  <div class="pl-deck-wrap" aria-hidden="true">
+    <span class="pl-deck" id="pl-deck">
+      <span class="pl-card"><img class="fill-img" alt="" src="assets/monument.png" fetchpriority="high" /></span>
+      <span class="pl-card"><img class="fill-img" alt="" src="assets/monument.png" fetchpriority="high" /></span>
+      <span class="pl-card"><img class="fill-img" alt="" src="assets/monument.png" fetchpriority="high" /></span>
+      <span class="pl-card"><img class="fill-img" alt="" src="assets/monument.png" fetchpriority="high" /></span>
+      <span class="pl-card"><img class="fill-img" alt="" src="assets/monument.png" fetchpriority="high" /></span>
+    </span>
+  </div>
+
+  <span class="pl-finale" aria-hidden="true" id="pl-finale">
+    <span class="pl-finale-photo" id="pl-finale-photo">
+      <img class="fill-img" alt="" id="pl-finale-img" src="assets/hero-water/ocean-first-frame.webp" fetchpriority="high" />
+    </span>
+  </span>
+
+  <div class="pl-mark-wrap">
+    <span class="pl-mark" aria-hidden="true" id="pl-mark">
+      <span class="glyph ghost"></span>
+      <span class="clipper" id="pl-clip"><span class="glyph"></span></span>
+    </span>
+  </div>
+</div>
+
+<!-- One ground for the whole page; it springs between black and off-white as
+     the blocks pass the middle of the viewport. -->
+<div class="ground" id="ground" aria-hidden="true"></div>
+
+<!-- ======================================================================
+     The fixed header — recolours itself from the section behind it.
+     ====================================================================== -->
+<header class="hdr" id="hdr" data-theme="dark">
+  <div class="hdr-row">
+    <div class="hdr-logo tc">
+      <a href="/" class="block"><span class="sr-only">Bollard</span><span aria-hidden="true" class="wordmark mask"></span></a>
+    </div>
+
+    <div class="hdr-flex tc">
+      <span class="marks"><span class="mk tl" aria-hidden="true"></span><span class="mk bl" aria-hidden="true"></span></span>
+    </div>
+
+    <div class="hdr-lang tc">
+      <div data-locale></div>
+      <span class="mk tl" aria-hidden="true"></span><span class="mk bl" aria-hidden="true"></span>
+    </div>
+
+    <div class="scrolltide-landing-slot" data-scrolltide-dashboard><a class="hdr-action tc" href="dashboard.html" data-hover-root>
+      <span class="swap" aria-hidden="true" data-swap><span><span class="arrow-glyph mask dark"></span></span><span><span class="arrow-glyph mask dark"></span></span></span>
+      <span class="roll" data-roll><span>open dashboard</span><span aria-hidden="true">open dashboard</span></span>
+      <span class="mk tl" aria-hidden="true"></span><span class="mk bl" aria-hidden="true"></span>
+    </a></div>
+  </div>
+
+  <nav class="hdr-nav" aria-label="Primary">
+    <ul>
+      <li><a class="nav-link" href="explore.html" data-hover-root><span class="roll" data-roll><span>Explore</span><span aria-hidden="true">Explore</span></span></a></li>
+      <li><a class="nav-link" href="details.html" data-hover-root><span class="roll" data-roll><span>The method</span><span aria-hidden="true">The method</span></span></a></li>
+      <li><a class="nav-link" href="process.html" data-hover-root><span class="roll" data-roll><span>How it works</span><span aria-hidden="true">How it works</span></span></a></li>
+      <li><a class="nav-link" href="system.html" data-hover-root><span class="roll" data-roll><span>The system</span><span aria-hidden="true">The system</span></span></a></li>
+      <li><a class="nav-link" href="resources.html" data-hover-root><span class="roll" data-roll><span>Resources</span><span aria-hidden="true">Resources</span></span></a></li>
+    </ul>
+  </nav>
+
+  <button type="button" class="burger tc" id="burger" aria-expanded="false" aria-controls="site-menu">
+    <span class="sr-only" id="burger-label">Open menu</span>
+    <!-- Open, the two rules cross: the same two lines, turned. -->
+    <span aria-hidden="true" class="burger-box"><span id="burger-a"></span><span id="burger-b"></span></span>
+  </button>
+
+  <div id="site-menu" class="menu" hidden>
+    <div>
+      <p class="menu-eyebrow">BOLLARD / EXPLORE</p>
+      <ul>
+        <li><a class="arrow-row" href="explore.html" data-arrow-link data-glyph="dark">Explore</a></li>
+        <li><a class="arrow-row" href="details.html" data-arrow-link data-glyph="dark">The method</a></li>
+        <li><a class="arrow-row" href="process.html" data-arrow-link data-glyph="dark">How it works</a></li>
+        <li><a class="arrow-row" href="system.html" data-arrow-link data-glyph="dark">The system</a></li>
+        <li><a class="arrow-row" href="resources.html" data-arrow-link data-glyph="dark">Resources</a></li>
+      </ul>
+      <!-- The language is a setting, not a destination, so it sits apart. -->
+      <div class="menu-lang"><span>Language</span><div data-locale></div></div>
+    </div>
+    <a class="menu-cta" href="dashboard.html" data-menu-close>
+      <span aria-hidden="true" class="arrow-glyph mask dark"></span>open dashboard
+    </a>
+  </div>
+</header>
+
+<main>
+
+<!-- ======================================================================
+     1 — HERO
+     ====================================================================== -->
+<div data-flow><div>
+<section class="hero" aria-labelledby="hero-title" data-ground="dark" data-header-theme="dark">
+
+  <!-- Headline. On a phone it carries the closing line with it as one centred
+       block; from md the two separate again. -->
+  <div class="hero-title">
+    <div class="contents held" data-handoff="title">
+      <h1 id="hero-title" class="te-plain">Evidence before delegation.</h1>
+    </div>
+  </div>
+
+  <!-- Closing line — under the headline on a phone, its own beat at the bottom
+       of the frame from md up. -->
+  <div class="hero-tagline">
+    <div class="contents held" data-handoff="tagline">
+      <p class="te-plain">Crash ratings for agents.</p>
+      <p class="te-plain">Built for decisions.</p>
+    </div>
+  </div>
+
+  <!-- The stage: a card in the stack below lg, the whole hero from lg up. -->
+  <div class="hero-stage" data-hero-stage>
+    <figure class="hero-backdrop">
+      <div class="abs-fill" id="hero-scrub"><div class="finale-layer" id="hero-layer">
+        <img class="fill-img" id="hero-photo" alt="" src="assets/hero-water/ocean-first-frame.webp" fetchpriority="high" /><video class="hero-water" data-hero-video data-desktop="assets/hero-water/ocean-desktop.mp4" data-mobile="assets/hero-water/ocean-mobile.mp4" muted loop playsinline preload="none" aria-hidden="true"></video>
+      </div></div>
+    </figure>
+    <!-- The figures sit inside the photo on a phone. -->
+    <div class="contents held" data-handoff="stats">
+      <ul class="stats-photo" data-stats></ul>
+    </div>
+  </div>
+
+  <!-- At 768 the figures sit beside the headline. -->
+  <div class="contents held" data-handoff="stats">
+    <ul class="stats-md" data-stats></ul>
+  </div>
+
+  <!-- The rule, the intro and the calls to action. -->
+<div class="hero-mid">
+    <img class="hero-rule" alt="" width="1376" height="1" src="assets/northwall/hero/line-divider.svg" />
+    <div class="hero-copy">
+      <div class="contents held" data-handoff="intro">
+        <p class="hero-intro te-plain" id="hero-intro">Crash ratings for AI agents that touch money. Evidence before delegation.</p>
+        <ul class="stats-lg" data-stats></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calls to action — a pair on the phone's own row, bottom-left from lg. -->
+  <div class="hero-links">
+    <div class="contents held" data-handoff="links">
+      <div id="hero-links-spring">
+        <ul>
+          <li><a class="cta" href="dashboard.html" data-cta>
+            <span class="cta-fill" aria-hidden="true"></span>
+            <span class="roll"><span>open dashboard</span><span aria-hidden="true">open dashboard</span></span>
+            <span class="mk tl" aria-hidden="true"></span><span class="mk tr" aria-hidden="true"></span><span class="mk bl" aria-hidden="true"></span><span class="mk br" aria-hidden="true"></span>
+          </a></li>
+          <li><a class="cta" href="process.html" data-cta>
+            <span class="cta-fill" aria-hidden="true"></span>
+            <span class="roll"><span>our PROCESS</span><span aria-hidden="true">our PROCESS</span></span>
+            <span class="mk tl" aria-hidden="true"></span><span class="mk tr" aria-hidden="true"></span><span class="mk bl" aria-hidden="true"></span><span class="mk br" aria-hidden="true"></span>
+          </a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+</div></div>
+
+<!-- ======================================================================
+     2 — ABOUT. Ten photo states, one layout — only the centre photo changes.
+     ====================================================================== -->
+<div data-flow><div>
+<section id="about" class="about" aria-labelledby="about-title" data-ground="light" data-header-theme="light">
+  <div class="about-band">
+    <div class="about-head">
+      <p class="eyebrow" id="about-eyebrow">Bollard</p>
+      <h2 id="about-title">Test before you trust</h2>
+    </div>
+
+    <!-- On a phone the topics sit inside the photo; from md the wrapper
+         dissolves and each takes its own place in the block. -->
+    <div class="about-show">
+      <a class="about-frame" href="details.html" id="about-frame">
+        <div class="abs-fill" data-about-slide><img class="fill-img" loading="lazy" alt="Hands typing code on a laptop" src="assets/stock/story/coding.jpg" /></div>
+        <div class="abs-fill" data-about-slide><img class="fill-img" loading="lazy" alt="Researcher reviewing data at a workstation" src="assets/stock/story/analysis.jpg" /></div>
+        <div class="abs-fill" data-about-slide><img class="fill-img" loading="lazy" alt="A person using a phone to make a digital transaction" src="assets/stock/story/transactions.jpg" /></div>
+        <div class="abs-fill" data-about-slide><img class="fill-img" loading="lazy" alt="Developer working at computer monitors" src="assets/stock/story/engineer.jpg" /></div>
+        <div class="abs-fill" data-about-slide><img class="fill-img" loading="lazy" alt="Bollard monument" src="assets/monument.png" /></div>
+
+        <span class="center-abs">
+          <span class="btn-black" id="about-btn">
+            <span class="swap" aria-hidden="true" data-swap><span><span class="arrow-glyph mask light"></span></span><span><span class="arrow-glyph mask light"></span></span></span>
+            <span class="roll" data-roll><span>the method</span><span aria-hidden="true">the method</span></span>
+          </span>
+        </span>
+      </a>
+
+      <ul class="about-topics" id="about-topics">
+        <li>Adversarial cases</li>
+        <li>Simulated wallets</li>
+        <li>Attested execution</li>
+        <li>Bonded quorum</li>
+        <li>Versioned ratings</li>
+      </ul>
+    </div>
+
+    <!-- The engine sets position: relative on its own container, so the
+         placement lives on this wrapper. -->
+    <div class="about-mission">
+      <p id="about-mission">A rating records how one agent version performed in defined tests. It is evidence, not a guarantee.</p>
+    </div>
+  </div>
+</section>
+</div></div>
+
+<!-- ======================================================================
+     3 — PROJECTS. Three cards, top-aligned; the middle card is taller.
+     ====================================================================== -->
+<div data-flow><div>
+<section id="projects" class="projects" aria-label="Projects" data-ground="dark" data-header-theme="dark">
+  <div class="projects-row">
+    <a class="card c1" href="dashboard.html#builders" data-card>
+      <span class="card-mask" data-card-mask>
+        <div class="abs-fill" data-card-scrub><div class="card-layer">
+          <span class="card-settle" data-card-settle><img class="fill-img" loading="lazy" alt="Code on a laptop screen" src="assets/stock/roles/builders.jpg" /></span>
+        </div></div>
+        <span class="scrim b1" aria-hidden="true"></span><span class="scrim b2" aria-hidden="true"></span><span class="scrim grad" aria-hidden="true"></span>
+        <span class="card-label"><span data-card-label>For builders</span></span>
+      </span>
+      <span class="center-abs card-btn"><span class="btn-black" data-card-btn>
+        <span class="swap" aria-hidden="true" data-swap><span><span class="arrow-glyph mask light"></span></span><span><span class="arrow-glyph mask light"></span></span></span>
+        <span class="roll" data-roll><span>explore</span><span aria-hidden="true">explore</span></span>
+      </span></span>
+    </a>
+    <a class="card c2" href="dashboard.html#lookup" data-card>
+      <span class="card-mask" data-card-mask>
+        <div class="abs-fill" data-card-scrub><div class="card-layer">
+          <span class="card-settle" data-card-settle><img class="fill-img" loading="lazy" alt="A person using a phone and payment card" src="assets/stock/roles/wallets.jpg" /></span>
+        </div></div>
+        <span class="scrim b1" aria-hidden="true"></span><span class="scrim b2" aria-hidden="true"></span><span class="scrim grad" aria-hidden="true"></span>
+        <span class="card-label"><span data-card-label>For wallets</span></span>
+      </span>
+      <span class="center-abs card-btn"><span class="btn-black" data-card-btn>
+        <span class="swap" aria-hidden="true" data-swap><span><span class="arrow-glyph mask light"></span></span><span><span class="arrow-glyph mask light"></span></span></span>
+        <span class="roll" data-roll><span>explore</span><span aria-hidden="true">explore</span></span>
+      </span></span>
+    </a>
+    <a class="card c3" href="dashboard.html#families" data-card>
+      <span class="card-mask" data-card-mask>
+        <div class="abs-fill" data-card-scrub><div class="card-layer">
+          <span class="card-settle" data-card-settle><img class="fill-img" loading="lazy" alt="A researcher reviewing data on a monitor" src="assets/stock/roles/researchers.jpg" /></span>
+        </div></div>
+        <span class="scrim b1" aria-hidden="true"></span><span class="scrim b2" aria-hidden="true"></span><span class="scrim grad" aria-hidden="true"></span>
+        <span class="card-label"><span data-card-label>For researchers</span></span>
+      </span>
+      <span class="center-abs card-btn"><span class="btn-black" data-card-btn>
+        <span class="swap" aria-hidden="true" data-swap><span><span class="arrow-glyph mask light"></span></span><span><span class="arrow-glyph mask light"></span></span></span>
+        <span class="roll" data-roll><span>explore</span><span aria-hidden="true">explore</span></span>
+      </span></span>
+    </a>
+  </div>
+</section>
+</div></div>
+
+<!-- ======================================================================
+     4 — PROCESS. Only which step is lit, its caption and the photo change.
+     ====================================================================== -->
+<div data-flow><div>
+<section id="process" class="process" aria-label="Our process" data-ground="dark" data-header-theme="dark">
+  <p class="process-eyebrow" id="process-eyebrow">OUR PROCESS</p>
+
+  <div class="process-stage" id="process-stage">
+    <div class="process-photo-box" id="process-scrub"><div id="process-parallax">
+      <!-- Perspective sits on the stage so the tilt reads as depth, not skew. -->
+      <div style="perspective: 900px">
+        <div id="process-tilt" style="transform-style: preserve-3d">
+          <div id="process-turn">
+            <div class="process-frame">
+              <div class="abs-fill" id="process-depth">
+                <div class="abs-fill" data-step-slide><img class="fill-img" loading="lazy" alt="Software testing at a workstation" src="assets/stock/story/testing.jpg" /></div>
+                <div class="abs-fill" data-step-slide><img class="fill-img" loading="lazy" alt="" src="assets/stock/story/testing.jpg" /></div>
+                <div class="abs-fill" data-step-slide><img class="fill-img" loading="lazy" alt="" src="assets/stock/story/testing.jpg" /></div>
+                <div class="abs-fill" data-step-slide><img class="fill-img" loading="lazy" alt="" src="assets/stock/story/testing.jpg" /></div>
+                <div class="abs-fill" data-step-slide><img class="fill-img" loading="lazy" alt="" src="assets/stock/story/testing.jpg" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="process-steps">
+      <ul id="process-list">
+        <li tabindex="0">01 / Challenge</li>
+        <li tabindex="0">02 / Simulate</li>
+        <li tabindex="0">03 / Attest</li>
+        <li tabindex="0">04 / Publish</li>
+        <li tabindex="0">05 / Check</li>
+      </ul>
+    </div>
+
+    <!-- The engine sets position: relative on its container, so the caption's
+         place under the stage lives on this wrapper. -->
+    <div class="process-caption" id="process-caption"></div>
+  </div>
+</section>
+</div></div>
+
+<!-- ======================================================================
+     5 — TEAM. Taller than the full-screen blocks; grows with its content.
+     ====================================================================== -->
+<div data-flow><div>
+<section id="team" class="team" aria-labelledby="team-title" data-ground="light" data-header-theme="light">
+  <div class="team-head">
+    <h2 id="team-title">A standard built from evidence.</h2>
+    <div class="team-intro">
+      <p id="team-intro">The proposed system combines simulation, attestation and a public registry. Each has a defined role and a known limit.</p>
+    </div>
+  </div>
+
+  <div class="roster">
+    <ul id="roster-list"></ul>
+    <!-- One portrait slot travelling between the rows — a 1440-only device. -->
+    <div class="travel" id="travel"><div class="travel-slot" id="travel-slot"></div></div>
+  </div>
+</section>
+</div></div>
+
+<!-- ======================================================================
+     6 — CONTACT. A full-bleed photo, a black rail with the lockup, the links
+     and the details, and the form card. The header steps aside here.
+     ====================================================================== -->
+<div data-flow><div>
+<section id="contacts" class="contact" aria-label="Contact" data-ground="dark" data-header-theme="hidden">
+  <div class="contact-top">
+    <span class="contact-photo" id="contact-scrub"><span class="contact-layer" id="contact-layer">
+      <video class="ambient-film" data-ambient="assets/footer-wave.mp4" poster="assets/footer-wave-poster.jpg" muted loop playsinline preload="none" aria-hidden="true"></video>
+    </span></span>
+
+    <div class="contact-rail"></div>
+
+    <a href="/" class="contact-logo">
+      <span class="sr-only">Bollard</span>
+      <span aria-hidden="true" class="wordmark mask"></span>
+    </a>
+
+    <form class="form" id="contact-form"><div class="form-fields"><h2 style="font-size:1.7rem;line-height:1.1">Prepare a rating request.</h2><p style="font-size:.8rem;line-height:1.5">Save a local draft; no request, payment or wallet action is sent.</p><label><span class="sr-only">Agent name</span><input class="field" name="agent" required placeholder="AGENT NAME *" /></label><label><span class="sr-only">Version</span><input class="field" name="version" placeholder="VERSION" /></label><label><span class="sr-only">ERC-8004 ID</span><input class="field" name="agentId" placeholder="ERC-8004 ID" /></label><label><span class="sr-only">Test endpoint</span><input class="field" name="endpoint" type="url" placeholder="TEST ENDPOINT (HTTPS://)" /></label><p style="font-size:.8rem;line-height:1.5">Proposed fee: 300 USDC on Base or 300 USDG on Robinhood Chain per version. Refund specified if no rating lands within 14 days.</p></div><button type="submit" class="submit">Save local draft ↗</button><p aria-live="polite" class="form-status" id="form-status" hidden></p><a href="dashboard.html#builders" style="font-size:.8rem;text-decoration:underline">Open builder workspace ↗</a></form>
+  </div>
+
+  <nav aria-label="Sections" class="contact-nav">
+    <ul>
+      <li data-contact-li><a class="arrow-row" href="explore.html" data-arrow-link data-glyph="light">Explore</a></li>
+      <li data-contact-li><a class="arrow-row" href="details.html" data-arrow-link data-glyph="light">The method</a></li>
+      <li data-contact-li><a class="arrow-row" href="process.html" data-arrow-link data-glyph="light">How it works</a></li>
+      <li data-contact-li><a class="arrow-row" href="system.html" data-arrow-link data-glyph="light">The system</a></li>
+      <li data-contact-li><a class="arrow-row" href="films.html" data-arrow-link data-glyph="light">Films</a></li>
+      <li data-contact-li><a class="arrow-row" href="resources.html" data-arrow-link data-glyph="light">Resources</a></li>
+    </ul>
+  </nav>
+
+  <address class="contact-details" id="contact-details"><span>Evidence before delegation.</span><span>Base first. Robinhood Chain mirror planned.</span><span><a href="details.html">Read the full methodology ↗</a></span></address>
+  <div class="bollard-social" aria-label="Social channels"><button type="button" data-social="GitHub" aria-label="GitHub"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M12 .9a11.1 11.1 0 0 0-3.5 21.6c.5.1.7-.2.7-.5v-2.2c-3.1.7-3.7-1.3-3.7-1.3-.5-1.3-1.2-1.6-1.2-1.6-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 1.7 2.6 1.2 3.2.9.1-.7.4-1.2.7-1.5-2.5-.3-5.1-1.2-5.1-5.5 0-1.2.4-2.2 1.1-3-.1-.3-.5-1.4.1-2.9 0 0 .9-.3 3 1.1a10.6 10.6 0 0 1 5.6 0c2.1-1.4 3-1.1 3-1.1.6 1.5.2 2.6.1 2.9.7.8 1.1 1.8 1.1 3 0 4.3-2.6 5.2-5.1 5.5.4.4.8 1 .8 2.1v3c0 .3.2.7.8.5A11.1 11.1 0 0 0 12 .9Z"/></svg></button><button type="button" data-social="Telegram" aria-label="Telegram"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M21.6 3.2 18.3 20c-.3 1.2-.9 1.5-1.8.9l-5-3.7-2.4 2.3c-.3.3-.5.5-1 .5l.3-5.1 9.3-8.4c.4-.4-.1-.6-.6-.2L5.5 13.5.6 12c-1.1-.4-1.1-1.1.2-1.6L20.1 2.9c.9-.3 1.7.2 1.5 1.3Z"/></svg></button><button type="button" data-social="X" aria-label="X"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M18.9 2H22l-6.8 7.8L23.2 22H17l-4.9-7.4L5.6 22H2.5l7.2-8.4L1.8 2h6.4l4.5 6.9L18.9 2Zm-1.1 18h1.7L7.2 3.9H5.4L17.8 20Z"/></svg></button></div>
+
+  <div class="contact-legal">
+    <p class="legal-links" id="legal-links"><span><a href="details.html">Methodology &amp; limitations</a></span></p>
+    <p class="legal-copy" id="legal-copy">© 2026 Bollard.</p>
+  </div>
+</section>
+</div></div>
+
+</main>
+
+<script type="module">
+import Lenis from "lenis"
+
+/* ==========================================================================
+   Assets — one folder in the public bucket, the same objects the recreation
+   prompt links (D-021). A failed load must be VISIBLE.
+   ========================================================================== */
+const ASSET_BASE = "assets/northwall"
+
+let bannerShown = false
+function assetFailed(url, err) {
+  if (window.console) console.error("[northwall]", url, err)
+  if (bannerShown) return
+  bannerShown = true
+  const show = () => {
+    const b = document.createElement("div")
+    b.setAttribute("role", "alert")
+    b.setAttribute("data-asset-error", "")
+    b.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:100;padding:.75rem 1rem;" +
+      "font:500 13px/1.4 ui-monospace,monospace;background:#b3261e;color:#fff;text-align:center"
+    b.textContent = "Some images could not be loaded."
+    document.body.appendChild(b)
+  }
+  if (document.body) show(); else document.addEventListener("DOMContentLoaded", show)
+}
+/* Every <img>, and every masked glyph (fetched by CSS, so probed here). */
+function watchImg(img) {
+  if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) assetFailed(img.src, new Error("failed to load"))
+  img.addEventListener("error", () => assetFailed(img.currentSrc || img.src, new Error("failed to load")))
+}
+document.querySelectorAll("img").forEach(watchImg)
+;["hero/icon-arrow.svg", "about/icon-arrow-light.svg", "contact/chevron-b.svg"].forEach((p) => {
+  const probe = new Image()
+  probe.crossOrigin = "anonymous"
+  probe.onerror = () => assetFailed(ASSET_BASE + "/" + p, new Error("failed to load"))
+  probe.src = ASSET_BASE + "/" + p
+})
+
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+/* ==========================================================================
+   1. The spring solver — integrated the way react-spring does it: 1ms
+      sub-steps, velocity in units per millisecond, mass 1.
+   ========================================================================== */
+const NUM = /-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi
+
+function hexToRgba(h) {
+  const m = /^#([0-9a-f]{6})$/i.exec(h)
+  if (!m) return h
+  const n = parseInt(m[1], 16)
+  return "rgba(" + ((n >> 16) & 255) + ", " + ((n >> 8) & 255) + ", " + (n & 255) + ", 1)"
+}
+/* A value is a template with numbers in it: 18 → [18]; "130%" → [130] + "%";
+   "inset(0% 0% 100% 0%)" → four numbers. Each number is its own spring. */
+function parse(v) {
+  if (typeof v === "number") return { nums: [v], tpl: null }
+  const s = hexToRgba(String(v))
+  const nums = [], tpl = []
+  let last = 0
+  s.replace(NUM, (m, off) => { tpl.push(s.slice(last, off)); nums.push(parseFloat(m)); last = off + m.length; return m })
+  tpl.push(s.slice(last))
+  return { nums, tpl }
+}
+function render(ch) {
+  if (!ch.tpl) return ch.v[0]
+  let out = ch.tpl[0]
+  for (let i = 0; i < ch.v.length; i++) out += (Math.round(ch.v[i] * 1000) / 1000) + ch.tpl[i + 1]
+  return out
+}
+
+function advance(ch, i, cfg, dtMs) {
+  dtMs = Math.min(dtMs, 64)
+  const from = ch.f[i], target = ch.t[i]
+  const precision = from === target ? 0.005 : Math.min(1, Math.abs(target - from) * 0.001)
+  let value = ch.v[i], velocity = ch.vel[i]
+  for (let s = 0, n = Math.ceil(dtMs); s < n; s++) {
+    const springForce = -cfg.tension * 0.000001 * (value - target)
+    const dampingForce = -cfg.friction * 0.001 * velocity
+    velocity += springForce + dampingForce
+    value += velocity
+    const crossed = target > from ? value > target : value < target
+    if (cfg.clamp && crossed) { ch.v[i] = target; ch.vel[i] = 0; return true }
+  }
+  if (Math.abs(velocity) < precision && Math.abs(target - value) < precision) {
+    ch.v[i] = target; ch.vel[i] = 0; return true
+  }
+  ch.v[i] = value; ch.vel[i] = velocity
+  return false
+}
+
+/* Transforms compose in one fixed order; static centring offsets in this file
+   use the standalone `translate:`/`rotate:` properties so a spring writing
+   `transform` never clobbers them. */
+const TRANSFORM_KEYS = ["rotate", "rotateX", "rotateY", "scale", "scaleX", "scaleY"]
+function writeStyle(el, ch) {
+  if (!el) return
+  const st = el.style
+  let tr = "", identity = true, hasT = false
+  if (ch.x || ch.y) {
+    hasT = true
+    const ax = ch.x ? render(ch.x) : 0, ay = ch.y ? render(ch.y) : 0
+    const fx = typeof ax === "number" ? ax + "px" : ax, fy = typeof ay === "number" ? ay + "px" : ay
+    if (parseFloat(fx) !== 0 || parseFloat(fy) !== 0) identity = false
+    tr += "translate3d(" + fx + "," + fy + ",0)"
+  }
+  for (const k of TRANSFORM_KEYS) {
+    if (!ch[k]) continue
+    hasT = true
+    const v = ch[k].v[0]
+    if (v !== (k.startsWith("scale") ? 1 : 0)) identity = false
+    tr += " " + k + "(" + v + (k.startsWith("rotate") ? "deg" : "") + ")"
+  }
+  if (hasT) st.transform = identity ? "none" : tr
+  for (const k in ch) {
+    if (k === "x" || k === "y" || TRANSFORM_KEYS.includes(k)) continue
+    const v = render(ch[k])
+    if (k === "blur") st.filter = "blur(" + v + "px)"
+    else if (k === "maskImage") { st.maskImage = v; st.webkitMaskImage = v }
+    else if (k === "opacity") st.opacity = v
+    else st[k] = typeof v === "number" ? v + "px" : v
+  }
+}
+
+/* ==========================================================================
+   2. One ticker. Live springs run every frame and leave when at rest; polling
+      consumers subscribe with a minimum gap and are skipped on frames that
+      come sooner.
+   ========================================================================== */
+const live = new Set()
+const polls = new Set()
+let lastTick = performance.now()
+function frame(now) {
+  const dt = now - lastTick
+  lastTick = now
+  for (const a of [...live]) {
+    if (!live.has(a)) continue
+    const done = a.step(dt)
+    if (a.onChange) a.onChange(a)
+    if (done) {
+      live.delete(a)
+      const f = a.onRest
+      a.onRest = null
+      if (f) f(a)
+    }
+  }
+  for (const p of [...polls]) {
+    if (now - p.last <= p.gap) continue
+    p.last = now
+    p.fn(now)
+  }
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+function poll(gap, fn) { const p = { gap, fn, last: performance.now() }; polls.add(p); return p }
+
+/* A spring group: named channels driven together, written to an element. */
+class Anim {
+  constructor(el, init, config, write) {
+    this.el = el
+    this.ch = {}
+    this.config = config || { tension: 170, friction: 26 }
+    this.writeFn = write || null
+    this.token = 0
+    this.onRest = null
+    this.onChange = null
+    if (init) this.set(init)
+  }
+  value(k) { return this.ch[k] ? this.ch[k].v[0] : undefined }
+  str(k) { return this.ch[k] ? render(this.ch[k]) : undefined }
+  write() { if (this.writeFn) this.writeFn(this); else writeStyle(this.el, this.ch) }
+  /* Snap, no animation. Cancels anything pending. */
+  set(vals) {
+    this.token++
+    for (const k in vals) {
+      const p = parse(vals[k])
+      this.ch[k] = { v: p.nums.slice(), vel: p.nums.map(() => 0), t: p.nums.slice(), f: p.nums.slice(), tpl: p.tpl, done: p.nums.map(() => true) }
+    }
+    live.delete(this)
+    this.write()
+    return this
+  }
+  /* Spring to `vals`. A later call supersedes a pending delayed one, which is
+     how a declarative useSpring behaves when its target changes. */
+  start(vals, opts = {}) {
+    const token = ++this.token
+    const run = () => {
+      if (token !== this.token) return
+      if (opts.config) this.config = opts.config
+      this.onRest = opts.onRest || null
+      this.onChange = opts.onChange || null
+      const immediate = opts.immediate || REDUCED
+      let moving = false
+      for (const k in vals) {
+        const p = parse(vals[k])
+        let ch = this.ch[k]
+        if (!ch || ch.v.length !== p.nums.length) {
+          ch = this.ch[k] = { v: p.nums.slice(), vel: p.nums.map(() => 0), t: p.nums.slice(), f: p.nums.slice(), tpl: p.tpl, done: p.nums.map(() => true) }
+        }
+        ch.tpl = p.tpl
+        for (let i = 0; i < p.nums.length; i++) {
+          if (immediate) { ch.v[i] = p.nums[i]; ch.vel[i] = 0; ch.t[i] = p.nums[i]; ch.f[i] = p.nums[i]; ch.done[i] = true; continue }
+          if (ch.t[i] === p.nums[i] && ch.done[i]) continue
+          ch.f[i] = ch.v[i]
+          ch.t[i] = p.nums[i]
+          ch.done[i] = false
+          moving = true
+        }
+      }
+      if (moving) live.add(this)
+      else {
+        this.write()
+        if (this.onChange) this.onChange(this)
+        if (!live.has(this) && this.onRest) { const f = this.onRest; this.onRest = null; f(this) }
+      }
+    }
+    const delay = REDUCED ? 0 : opts.delay || 0
+    if (delay > 0) setTimeout(run, delay)
+    else run()
+    return this
+  }
+  step(dt) {
+    let rest = true
+    for (const k in this.ch) {
+      const ch = this.ch[k]
+      for (let i = 0; i < ch.v.length; i++) {
+        if (ch.done[i]) continue
+        ch.done[i] = advance(ch, i, this.config, dt)
+        if (!ch.done[i]) rest = false
+      }
+    }
+    this.write()
+    return rest
+  }
+}
+
+/* ==========================================================================
+   3. The behaviours
+   ========================================================================== */
+/* Viewport width as the project's springs see it — a debounced resize store. */
+let viewportWidth = window.innerWidth
+const widthListeners = new Set()
+{
+  let t = 0
+  window.addEventListener("resize", () => {
+    clearTimeout(t)
+    t = setTimeout(() => { viewportWidth = window.innerWidth; widthListeners.forEach((f) => f(viewportWidth)) }, 300)
+  })
+}
+
+/* An IntersectionObserver per element, threshold 0. */
+function observe(el, fn, options) {
+  const io = new IntersectionObserver(([e]) => fn(e.isIntersecting, e), options || { threshold: 0 })
+  io.observe(el)
+  return io
+}
+
+/* Inview — springs to `to` (after delayIn) when the element enters view.
+   `once` latches; `always` snaps straight back to `from` when it leaves. */
+function inview(el, o) {
+  const a = new Anim(o.target || el, o.from, o.config)
+  let played = false
+  observe(el, (inside) => {
+    if (inside) {
+      if (played && o.mode === "once") return
+      played = true
+      a.start(o.to, { delay: o.delayIn || 0 })
+    } else if (o.mode !== "once") {
+      a.set(o.from)
+    }
+  })
+  return a
+}
+
+/* Hover exists only where a hover can happen. Every hover element renders at
+   rest in its `from` state; they switch live together once the page can
+   hover — in an idle moment after load, at the first mouse move, or on
+   resize — and ignore the pointer whenever the viewport is 768 or narrower. */
+const HOVER_MIN_WIDTH = 768
+const hoverTriggers = new Map()
+let hoverLive = false
+function hover(trigger, el, from, to, config) {
+  const fromOf = typeof from === "function" ? from : () => from
+  const a = new Anim(el, fromOf(), config)
+  let list = hoverTriggers.get(trigger)
+  if (!list) {
+    list = { items: [], over: false }
+    hoverTriggers.set(trigger, list)
+    trigger.addEventListener("mouseenter", () => {
+      if (!hoverLive || window.innerWidth <= HOVER_MIN_WIDTH) return
+      list.over = true
+      list.items.forEach((h) => h.a.start(h.to))
+    })
+    trigger.addEventListener("mouseleave", () => {
+      if (!hoverLive) return
+      list.over = false
+      list.items.forEach((h) => h.a.start(h.fromOf()))
+    })
+  }
+  list.items.push({ a, to, fromOf })
+  return a
+}
+widthListeners.add((w) => {
+  hoverTriggers.forEach((list) => {
+    if (w <= HOVER_MIN_WIDTH) list.over = false
+    if (!list.over) list.items.forEach((h) => h.a.start(h.fromOf()))
+  })
+})
+function canHover() {
+  return window.innerWidth > HOVER_MIN_WIDTH && window.matchMedia("(hover: hover) and (pointer: fine)").matches
+}
+function enableHover() {
+  if (hoverLive || !canHover()) return
+  hoverLive = true
+  /* A trigger already under the pointer gets its mouseenter replayed. */
+  hoverTriggers.forEach((_, t) => { if (t.matches(":hover")) t.dispatchEvent(new MouseEvent("mouseenter")) })
+}
+window.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") enableHover() }, { passive: true })
+window.addEventListener("resize", enableHover, { passive: true })
+{
+  const idle = () => window.requestIdleCallback ? window.requestIdleCallback(enableHover, { timeout: 2000 }) : setTimeout(enableHover, 300)
+  if (document.readyState === "complete") idle()
+  else window.addEventListener("load", idle, { once: true })
+}
+
+/* Scrub — scroll-linked, sampled at 32ms while the measured element is in
+   view (plus 10 samples after it leaves). Each sample retargets the spring,
+   so the spring still smooths the scroll. */
+function scrub(box, el, o) {
+  const a = new Anim(el, o.from, o.config)
+  let inside = false, after = 0
+  observe(box, (v) => { if (inside && !v) after = 0; inside = v })
+  let saved = -1
+  const fp = {}, tp = {}
+  for (const k in o.to) { fp[k] = parse(o.from[k]); tp[k] = parse(o.to[k]) }
+  poll(o.interval || 32, () => {
+    if (!inside) { if (after >= 10) return; after++ }
+    const bb = box.getBoundingClientRect()
+    const h = window.innerHeight
+    const pos = {
+      top_top: bb.top, center_top: bb.top + bb.height / 2, bottom_top: bb.bottom,
+      top_bottom: bb.top - h, center_bottom: bb.top + bb.height / 2 - h, bottom_bottom: bb.bottom - h,
+      top_center: bb.top - h / 2, center_center: bb.top + bb.height / 2 - h / 2, bottom_center: bb.bottom - h / 2,
+    }
+    const s = pos[o.start.replace(" ", "_")], e = pos[o.end.replace(" ", "_")]
+    const len = Math.abs(s - e)
+    const progress = Math.min(Math.max(0, 1 - (s + len) / len), 1)
+    if (progress === saved) return
+    saved = progress
+    const next = {}
+    for (const k in o.to) {
+      const f = fp[k], t = tp[k]
+      if (!t.tpl) next[k] = f.nums[0] + (t.nums[0] - f.nums[0]) * progress
+      else {
+        let out = t.tpl[0]
+        for (let i = 0; i < t.nums.length; i++) out += (f.nums[i] + (t.nums[i] - f.nums[i]) * progress) + t.tpl[i + 1]
+        next[k] = out
+      }
+    }
+    a.start(next)
+  })
+  return a
+}
+
+/* ==========================================================================
+   4. The word-by-word text engine. Each word is a slot holding a word span;
+      the container's column-gap carries the spaces. A visually hidden plain
+      copy serves screen readers; the animated words are aria-hidden.
+   ========================================================================== */
+const HEAD = { in: { y: "0%", opacity: 1, scale: 1 }, out: { y: "80%", opacity: 0, scale: 0.9 }, stagger: 55, config: { tension: 180, friction: 26 } }
+const COPY = { in: { y: "0%", opacity: 1, scale: 1 }, out: { y: "60%", opacity: 0, scale: 0.94 }, stagger: 22, config: { tension: 210, friction: 28 } }
+const ENTRY_DELAY = 180
+const ENTRY_STAGGER = 110
+
+function textEngine(el, o) {
+  const text = el.textContent.trim()
+  el.textContent = ""
+  el.classList.remove("te-plain")
+  el.classList.add("te")
+  if (o.gap === "word") el.classList.add("gap-word")
+  const sr = document.createElement("span")
+  sr.className = "te-sr"
+  sr.textContent = text
+  const words = document.createElement("span")
+  words.className = "te-words"
+  words.setAttribute("aria-hidden", "true")
+  el.append(sr, words)
+  const anims = text.split(/\s+/).map((w) => {
+    const slot = document.createElement("span")
+    slot.className = "te-slot" + (o.clip ? " clip" : "")
+    const word = document.createElement("span")
+    word.className = "te-word"
+    word.textContent = w
+    slot.appendChild(word)
+    words.appendChild(slot)
+    return new Anim(word, o.out, o.config)
+  })
+  let played = false
+  const play = () => anims.forEach((a, i) => a.start(o.in, { delay: (o.delayIn || 0) + i * o.stagger }))
+  const out = () => anims.forEach((a) => a.set(o.out))
+  observe(el, (inside) => {
+    if (inside) { if (!played) { played = true; play() } }
+    else if (o.mode === "always" && played) { played = false; out() }
+  })
+  return { el }
+}
+
+/* ==========================================================================
+   Counting figures — only the number moves; prefix, unit and label never do.
+   ========================================================================== */
+const COUNT = { tension: 90, friction: 34 }
+function splitFigure(value) {
+  const m = value.match(/-?\d+(?:[.,]\d+)?/)
+  if (!m) return null
+  const raw = m[0]
+  const target = parseFloat(raw.replace(",", "."))
+  if (isNaN(target)) return null
+  return { prefix: value.slice(0, m.index), suffix: value.slice(m.index + raw.length), target, decimals: /[.,]/.test(raw) ? 1 : 0 }
+}
+function countingDigits(fig) {
+  const span = document.createElement("span")
+  span.textContent = (0).toFixed(fig.decimals)
+  const a = new Anim(null, { count: 0 }, COUNT, (an) => { span.textContent = an.value("count").toFixed(fig.decimals) })
+  return { node: span, play: (delay) => a.start({ count: fig.target }, { delay }) }
+}
+
+/* ==========================================================================
+   The shared primitives
+   ========================================================================== */
+const ROLL = { tension: 260, friction: 26 }
+const SWAP = { tension: 300, friction: 26 }
+const SWAP_TRAVEL = 16
+const ARROW_DRIFT = 4
+const CORNER = { tension: 300, friction: 22 }
+const CORNER_SPREAD = 3
+
+function rollLabel(roll, trigger) {
+  hover(trigger, roll.children[0], { y: "0%" }, { y: "-100%" }, ROLL)
+  hover(trigger, roll.children[1], { y: "100%" }, { y: "0%" }, ROLL)
+}
+function swapArrow(swap, trigger) {
+  hover(trigger, swap.children[0], { x: 0 }, { x: SWAP_TRAVEL }, SWAP)
+  hover(trigger, swap.children[1], { x: -SWAP_TRAVEL }, { x: 0 }, SWAP)
+}
+/* ArrowLink — the label drifts after its arrow, which is handed on. */
+function arrowLink(a) {
+  const label = a.textContent.trim()
+  a.textContent = ""
+  const l = document.createElement("span")
+  l.className = "block"
+  l.textContent = label
+  const swap = document.createElement("span")
+  swap.className = "swap"
+  swap.setAttribute("aria-hidden", "true")
+  const g = a.dataset.glyph
+  swap.innerHTML = '<span><span class="arrow-glyph mask ' + g + '"></span></span><span><span class="arrow-glyph mask ' + g + '"></span></span>'
+  a.append(l, swap)
+  hover(a, l, { x: 0 }, { x: ARROW_DRIFT }, SWAP)
+  swapArrow(swap, a)
+}
+/* Every rolling label / swapping arrow driven by its link or button. */
+document.querySelectorAll("[data-hover-root]").forEach((root) => {
+  root.querySelectorAll("[data-roll]").forEach((r) => rollLabel(r, root))
+  root.querySelectorAll("[data-swap]").forEach((s) => swapArrow(s, root))
+})
+
+/* ==========================================================================
+   Smooth scroll — Lenis, driven by its own rAF loop. "Stopping" scroll also
+   pins the document so nothing scrolls natively under the panel.
+   ========================================================================== */
+const lenis = new Lenis({ smoothWheel: !matchMedia('(prefers-reduced-motion: reduce)').matches, anchors: true })
+function lenisRaf(t) { lenis.raf(t); requestAnimationFrame(lenisRaf) }
+requestAnimationFrame(lenisRaf)
+function scrollEnabled(on) {
+  const html = document.documentElement
+  if (on) {
+    lenis.start()
+    html.style.removeProperty("position"); html.style.removeProperty("overflow"); html.style.removeProperty("height")
+  } else {
+    lenis.stop()
+    html.style.position = "relative"; html.style.overflow = "hidden"; html.style.height = "100%"
+  }
+}
+
+/* Above 1440 the scale-up is damped. */
+function adaptiveGrid() {
+  const w = window.innerWidth
+  const size = 16 - (16 * (((1440 - w) / 1440) * 100 * 0.6666)) / 100
+  if (size > 16) document.documentElement.style.fontSize = size + "px"
+  else document.documentElement.style.removeProperty("font-size")
+}
+adaptiveGrid()
+window.addEventListener("resize", adaptiveGrid)
+
+/* ==========================================================================
+   The page ground and the section flow
+   ========================================================================== */
+const ground = new Anim(document.getElementById("ground"), { backgroundColor: "#000000" }, { tension: 90, friction: 26 })
+let groundNow = "dark"
+poll(150, () => {
+  const mid = window.innerHeight / 2
+  for (const s of document.querySelectorAll("[data-ground]")) {
+    const r = s.getBoundingClientRect()
+    if (r.top > mid || r.bottom <= mid) continue
+    const next = s.dataset.ground === "light" ? "light" : "dark"
+    if (next !== groundNow) { groundNow = next; ground.start({ backgroundColor: next === "light" ? "#f5f5f5" : "#000000" }) }
+    return
+  }
+})
+
+/* Every section's contents drift down and fade as it scrolls out. Measure the
+   outer, animate the inner. */
+document.querySelectorAll("[data-flow]").forEach((f) => {
+  scrub(f, f.firstElementChild, {
+    start: "bottom bottom", end: "bottom top",
+    from: { y: 0, opacity: 1 }, to: { y: 50, opacity: 0.25 },
+    config: { tension: 110, friction: 26 }, interval: 32,
+  })
+})
+
+/* ==========================================================================
+   The fixed header
+   ========================================================================== */
+const hdr = document.getElementById("hdr")
+let theme = "dark"
+poll(80, () => {
+  const sections = document.querySelectorAll("[data-header-theme]")
+  /* A `hidden` section wins as soon as it takes the lower half of the view. */
+  for (const s of sections) {
+    if (s.dataset.headerTheme !== "hidden") continue
+    if (s.getBoundingClientRect().top > window.innerHeight * 0.5) continue
+    setTheme("hidden")
+    return
+  }
+  /* Backwards, on the ground's own mid-line: at a boundary two sections cross
+     it at once, and the later one is painted over the header. */
+  const mid = window.innerHeight / 2
+  for (let i = sections.length - 1; i >= 0; i--) {
+    const r = sections[i].getBoundingClientRect()
+    if (r.top > mid || r.bottom <= mid) continue
+    const d = sections[i].dataset.headerTheme
+    setTheme(d === "light" || d === "hidden" ? d : "dark")
+    return
+  }
+})
+function setTheme(next) {
+  if (next === theme) return
+  theme = next
+  hdr.dataset.theme = next
+  if (next === "hidden") setMenu(false)
+}
+
+/* The language switcher — used in the header cell and the phone menu. */
+const LOCALES = [{ code: "EN", name: "English", href: "#en" }, { code: "ES", name: "Español", href: "#es" }, { code: "FR", name: "Français", href: "#fr" }]
+const CLOSE_DELAY = 260
+function localeSwitch(host) {
+  const root = document.createElement("div")
+  root.className = "lang"
+  root.innerHTML =
+    '<button type="button" class="lang-btn" aria-expanded="false" aria-haspopup="listbox">' +
+      '<span class="sr-only">Language:</span>EN<span class="block" data-chev><span aria-hidden="true" class="lang-chev mask"></span></span></button>' +
+    '<span aria-hidden="true" class="lang-bridge" hidden></span>' +
+    '<ul class="lang-list" style="visibility:hidden">' +
+      LOCALES.map((l, i) => '<li><a href="' + l.href + '"' + (i === 0 ? ' aria-current="true"' : "") + '><span class="roll"><span>' + l.name + '</span><span aria-hidden="true">' + l.name + "</span></span></a></li>").join("") +
+    "</ul>"
+  host.replaceWith(root)
+  const btn = root.querySelector("button"), list = root.querySelector("ul"), bridge = root.querySelector(".lang-bridge")
+  const chev = new Anim(root.querySelector("[data-chev]"), { rotate: 0 }, { tension: 300, friction: 26 })
+  const panel = new Anim(list, { opacity: 0, y: -6 }, { tension: 300, friction: 30 })
+  list.querySelectorAll("a").forEach((a) => {
+    rollLabel(a.querySelector(".roll"), a)
+    a.addEventListener("click", () => setOpen(false))
+  })
+  let open = false, timer = 0
+  function setOpen(v) {
+    if (v === open) return
+    open = v
+    btn.setAttribute("aria-expanded", String(v))
+    list.style.visibility = v ? "visible" : "hidden"
+    bridge.hidden = !v
+    chev.start({ rotate: v ? 180 : 0 })
+    panel.start({ opacity: v ? 1 : 0, y: v ? 0 : -6 })
+  }
+  root.addEventListener("pointerenter", (e) => { if (e.pointerType !== "mouse") return; clearTimeout(timer); setOpen(true) })
+  root.addEventListener("pointerleave", (e) => { if (e.pointerType !== "mouse") return; clearTimeout(timer); timer = setTimeout(() => setOpen(false), CLOSE_DELAY) })
+  btn.addEventListener("click", () => setOpen(!open))
+  document.addEventListener("pointerdown", (e) => { if (open && !root.contains(e.target)) setOpen(false) })
+  document.addEventListener("keydown", (e) => { if (open && e.key === "Escape") setOpen(false) })
+}
+document.querySelectorAll("[data-locale]").forEach(localeSwitch)
+
+/* Burger and the phone menu. */
+const BURGER = { tension: 320, friction: 26 }
+const burger = document.getElementById("burger")
+const menu = document.getElementById("site-menu")
+const burgerA = new Anim(document.getElementById("burger-a"), { y: 5, rotate: 0 }, BURGER)
+const burgerB = new Anim(document.getElementById("burger-b"), { y: 11, rotate: 0 }, BURGER)
+let menuOpen = false
+function setMenu(open) {
+  if (open === menuOpen) return
+  menuOpen = open
+  menu.hidden = !open
+  burger.setAttribute("aria-expanded", String(open))
+  document.getElementById("burger-label").textContent = open ? "Close menu" : "Open menu"
+  document.body.style.overflow = open ? "hidden" : ""
+  if (open) requestAnimationFrame(() => menu.querySelector("a")?.focus())
+  burgerA.start({ y: open ? 8 : 5, rotate: open ? 45 : 0 })
+  burgerB.start({ y: open ? 8 : 11, rotate: open ? -45 : 0 })
+}
+burger.addEventListener("click", () => setMenu(!menuOpen))
+document.addEventListener("keydown", (event) => {
+  if (!menuOpen) return
+  if (event.key === "Escape") { event.preventDefault(); setMenu(false); burger.focus(); return }
+  if (event.key !== "Tab") return
+  const focusable = [burger, ...menu.querySelectorAll('a[href], button:not([disabled])')].filter(el => el.offsetParent !== null)
+  if (!focusable.length) return
+  if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable[focusable.length - 1].focus() }
+  else if (!event.shiftKey && document.activeElement === focusable[focusable.length - 1]) { event.preventDefault(); focusable[0].focus() }
+})
+window.matchMedia("(min-width: 768px)").addEventListener("change", event => { if (event.matches && menuOpen) setMenu(false) })
+menu.querySelectorAll("a[data-arrow-link], [data-menu-close]").forEach((a) => a.addEventListener("click", () => setMenu(false)))
+document.querySelectorAll("[data-arrow-link]").forEach(arrowLink)
+
+/* ==========================================================================
+   The handoff — the hero's entrance waits for the panel to leave. Each held
+   piece is released in a macrotask of its own, in document order.
+   ========================================================================== */
+let handedOver = false
+const waiting = new Set()
+function markHandoff() {
+  if (handedOver) return
+  handedOver = true
+  waiting.forEach((f) => f())
+  waiting.clear()
+}
+function onHandoff(fn, fallback = 9000) {
+  if (handedOver) { fn(); return }
+  waiting.add(fn)
+  setTimeout(() => { if (waiting.delete(fn)) fn() }, fallback)
+}
+const releaseQueue = []
+let pumping = false
+function pump() {
+  const next = releaseQueue.shift()
+  if (!next) { pumping = false; return }
+  next()
+  setTimeout(pump, 0)
+}
+function inTurn(fn) {
+  releaseQueue.push(fn)
+  if (pumping) return
+  pumping = true
+  setTimeout(pump, 0)
+}
+function afterHandoff(wrapper, start) {
+  onHandoff(() => inTurn(() => { start(); wrapper.classList.remove("held") }))
+}
+
+/* ==========================================================================
+   1 — HERO
+   ========================================================================== */
+const HERO_LINE = { in: { y: "0%", opacity: 1, scale: 1 }, out: { y: "130%", opacity: 1, scale: 0.9 }, stagger: 55, config: { tension: 180, friction: 26 } }
+const HERO_INTRO = { in: { y: "0%", opacity: 1, scale: 1 }, out: { y: "130%", opacity: 1, scale: 0.94 }, stagger: 22, config: { tension: 210, friction: 28 } }
+const INTRO_DELAY = 120, TAGLINE_DELAY = 160, TAGLINE_STAGGER = 90, LINKS_DELAY = 320
+
+/* The photo sinks slower than the page. */
+scrub(document.getElementById("hero-scrub"), document.getElementById("hero-layer"), {
+  start: "top top", end: "bottom top", from: { y: "0%" }, to: { y: "22%" },
+  config: { tension: 120, friction: 26 }, interval: 32,
+})
+
+const HERO_STATS = [
+  { value: "8 ", label: "attack families" },
+  { value: "5 ", label: "rating grades" },
+  { value: "2 ", label: "planned networks" },
+]
+/* At rest (held hidden until the handoff) the figures read as written. */
+document.querySelectorAll("[data-stats]").forEach((ul) => {
+  ul.innerHTML = HERO_STATS.map((s) => "<li>" + s.value + '<span class="muted-inv">' + s.label + "</span></li>").join("")
+})
+function liveStats(ul) {
+  ul.textContent = ""
+  const rows = HERO_STATS.map((s, i) => {
+    const li = document.createElement("li")
+    const fig = splitFigure(s.value)
+    const digits = countingDigits(fig)
+    li.append(fig.prefix, digits.node, fig.suffix)
+    const label = document.createElement("span")
+    label.className = "muted-inv"
+    label.textContent = s.label
+    li.append(label)
+    ul.appendChild(li)
+    return { a: new Anim(li, { opacity: 0, y: 18 }, { tension: 210, friction: 28 }), digits, delay: i * 110 }
+  })
+  let played = false
+  observe(ul, (inside) => {
+    if (!inside || played) return
+    played = true
+    rows.forEach((r) => { r.a.start({ opacity: 1, y: 0 }, { delay: r.delay }); r.digits.play(r.delay) })
+  })
+}
+
+document.querySelectorAll("[data-handoff]").forEach((w) => {
+  const kind = w.dataset.handoff
+  afterHandoff(w, () => {
+    if (kind === "title") textEngine(document.getElementById("hero-title"), { ...HERO_LINE, clip: true, mode: "once" })
+    else if (kind === "tagline") w.querySelectorAll("p").forEach((p, i) => textEngine(p, { ...HERO_LINE, clip: true, mode: "once", delayIn: TAGLINE_DELAY + i * TAGLINE_STAGGER }))
+    else if (kind === "stats") w.querySelectorAll("[data-stats]").forEach(liveStats)
+    else if (kind === "intro") {
+      textEngine(document.getElementById("hero-intro"), { ...HERO_INTRO, clip: true, mode: "once", delayIn: INTRO_DELAY })
+      w.querySelectorAll("[data-stats]").forEach(liveStats)
+    } else if (kind === "links") {
+      /* Full opacity behind a soft mask that sweeps up with the pair. */
+      new Anim(document.getElementById("hero-links-spring"), {
+        opacity: 1, y: 16, maskImage: "linear-gradient(to top, rgba(0,0,0,1) -60%, rgba(0,0,0,0) -10%)",
+      }, { tension: 170, friction: 26 }).start({
+        opacity: 1, y: 0, maskImage: "linear-gradient(to top, rgba(0,0,0,1) 100%, rgba(0,0,0,0) 150%)",
+      }, { delay: LINKS_DELAY })
+    }
+  })
+})
+
+/* The calls to action: a white panel fills from the bottom, the label rolls
+   over to a black copy, and the four corners pull outwards. */
+document.querySelectorAll("[data-cta]").forEach((a) => {
+  hover(a, a.querySelector(".cta-fill"), { scaleY: 0 }, { scaleY: 1 }, { tension: 240, friction: 30 })
+  rollLabel(a.querySelector(".roll"), a)
+  a.querySelectorAll(":scope > .mk").forEach((m) => {
+    const x = m.classList.contains("tl") || m.classList.contains("bl") ? -1 : 1
+    const y = m.classList.contains("tl") || m.classList.contains("tr") ? -1 : 1
+    hover(a, m, { x: 0, y: 0 }, { x: x * CORNER_SPREAD, y: y * CORNER_SPREAD }, CORNER)
+  })
+})
+
+/* ==========================================================================
+   2 — ABOUT
+   ========================================================================== */
+const REVEAL = { tension: 210, friction: 28 }
+inview(document.getElementById("about-eyebrow"), { mode: "once", delayIn: ENTRY_DELAY, from: { opacity: 0, y: 12 }, to: { opacity: 1, y: 0 }, config: REVEAL })
+textEngine(document.getElementById("about-title"), { ...HEAD, mode: "once", delayIn: ENTRY_DELAY + 120 })
+textEngine(document.getElementById("about-mission"), { ...COPY, gap: "word", mode: "always", delayIn: ENTRY_DELAY + 280 })
+
+const START_DELAY = 450, STEP_INTERVAL = 2400, TOPIC_DIM = 0.55
+const aboutFrame = document.getElementById("about-frame")
+const aboutSlides = [...document.querySelectorAll("[data-about-slide]")].map((d, i) => new Anim(d, { opacity: i === 0 ? 1 : 0 }, { tension: 420, friction: 38 }))
+const topics = [...document.querySelectorAll("#about-topics li")].map((li, i) => new Anim(li, { opacity: i === 0 ? 1 : TOPIC_DIM }, { tension: 260, friction: 30 }))
+let aboutIndex = 0, aboutStart = 0, aboutTimer = 0
+/* The loop runs only while the frame is in view, and never with reduced motion. */
+observe(aboutFrame, (inside) => {
+  clearTimeout(aboutStart); clearInterval(aboutTimer)
+  if (!inside || REDUCED) return
+  aboutStart = setTimeout(() => {
+    aboutTimer = setInterval(() => {
+      aboutIndex = (aboutIndex + 1) % aboutSlides.length
+      aboutSlides.forEach((a, i) => a.start({ opacity: i === aboutIndex ? 1 : 0 }))
+      const active = Math.floor((aboutIndex * topics.length) / aboutSlides.length)
+      topics.forEach((a, i) => a.start({ opacity: i === active ? 1 : TOPIC_DIM }))
+    }, STEP_INTERVAL)
+  }, START_DELAY)
+})
+/* At 1440 and wider the button is a hover reveal; below it is simply drawn. */
+const BUTTON = { tension: 420, friction: 30 }
+const aboutBtnFrom = () => (viewportWidth < 1440 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.94 })
+hover(aboutFrame, document.getElementById("about-btn"), aboutBtnFrom, { opacity: 1, scale: 1 }, BUTTON)
+aboutFrame.querySelectorAll("[data-roll]").forEach((r) => rollLabel(r, aboutFrame))
+aboutFrame.querySelectorAll("[data-swap]").forEach((s) => swapArrow(s, aboutFrame))
+
+/* ==========================================================================
+   3 — PROJECTS
+   ========================================================================== */
+const DRIFTS = [90, 55, 90]
+const MASK_STAGGER = 180, LABEL_AFTER_MASK = 420
+document.querySelectorAll("[data-card]").forEach((card, i) => {
+  const delay = ENTRY_DELAY + i * MASK_STAGGER
+  /* The card opens top to bottom as if a mask were drawn down over it. */
+  inview(card.querySelector("[data-card-mask]"), {
+    mode: "once", delayIn: delay, from: { clipPath: "inset(0% 0% 100% 0%)" }, to: { clipPath: "inset(0% 0% 0% 0%)" },
+    config: { tension: 70, friction: 24, clamp: true },
+  })
+  const scrubBox = card.querySelector("[data-card-scrub]")
+  scrub(scrubBox, scrubBox.firstElementChild, {
+    start: "top bottom", end: "bottom top", from: { y: -DRIFTS[i] }, to: { y: DRIFTS[i] },
+    config: { tension: 120, friction: 26 }, interval: 32,
+  })
+  inview(card.querySelector("[data-card-settle]"), { mode: "once", delayIn: delay, from: { scale: 1.18 }, to: { scale: 1 }, config: { tension: 60, friction: 26 } })
+  textEngine(card.querySelector("[data-card-label]"), {
+    in: { y: "0%", opacity: 1, scale: 1 }, out: { y: "90%", opacity: 0, scale: 0.9 },
+    stagger: 50, config: { tension: 190, friction: 28 }, mode: "once", delayIn: delay + LABEL_AFTER_MASK,
+  })
+  const btnFrom = () => (viewportWidth <= HOVER_MIN_WIDTH ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.94 })
+  hover(card, card.querySelector("[data-card-btn]"), btnFrom, { opacity: 1, scale: 1 }, BUTTON)
+  card.querySelectorAll("[data-roll]").forEach((r) => rollLabel(r, card))
+  card.querySelectorAll("[data-swap]").forEach((s) => swapArrow(s, card))
+})
+
+/* ==========================================================================
+   4 — PROCESS
+   ========================================================================== */
+inview(document.getElementById("process-eyebrow"), { mode: "once", delayIn: ENTRY_DELAY, from: { opacity: 0, y: 12 }, to: { opacity: 1, y: 0 }, config: REVEAL })
+const STEPS = [
+  { desc: "Cases inspired by real incidents and public arenas challenge agents across eight attack families.", w: "18.4375rem", alt: "Software testing at a workstation" },
+  { desc: "The harness runs seeded scenarios against simulated wallets, canary funds and canary secrets.", w: "16.6875rem", alt: "Software testing at a workstation" },
+  { desc: "An attested enclave and independent bonded operators replay and sign matching results.", w: "21.75rem", alt: "Software testing at a workstation" },
+  { desc: "The registry records the version, corpus, seed count, expiry and signatures.", w: "16.8125rem", alt: "Software testing at a workstation" },
+  { desc: "A wallet policy can check a rating floor, while stale or disputed ratings fail closed.", w: "15.875rem", alt: "Software testing at a workstation" },
+]
+const LAST_TILT = 30, TILT_STEP = 10, MAX_TILT = 12, MAX_DEPTH = 18, DIM_OPACITY = 0.3, DIM_BLUR = 5, AUTO_STEP_MS = 3800
+const stage = document.getElementById("process-stage")
+const caption = document.getElementById("process-caption")
+const stepItems = [...document.querySelectorAll("#process-list li")]
+const stepAnims = stepItems.map((li, i) => new Anim(li, { opacity: i === 0 ? 1 : DIM_OPACITY, blur: i === 0 ? 0 : DIM_BLUR }, { tension: 220, friction: 30 }))
+const stepSlides = [...document.querySelectorAll("[data-step-slide]")]
+const slideAnims = stepSlides.map((d, i) => new Anim(d, { opacity: i === 0 ? 1 : 0, scale: i === 0 ? 1 : 1.06 }, { tension: 320, friction: 34 }))
+const turn = new Anim(document.getElementById("process-turn"), { rotate: LAST_TILT - (STEPS.length - 1) * TILT_STEP }, { tension: 170, friction: 22 })
+const tilt = new Anim(document.getElementById("process-tilt"), { rotateX: 0, rotateY: 0 }, { tension: 150, friction: 24 })
+const depth = new Anim(document.getElementById("process-depth"), { x: 0, y: 0, scale: 1.12 }, { tension: 150, friction: 24 })
+let activeStep = -1
+function setStep(i) {
+  if (i === activeStep) return
+  activeStep = i
+  stepItems.forEach((li, j) => li.classList.toggle("on", j === i))
+  stepAnims.forEach((a, j) => a.start({ opacity: j === i ? 1 : DIM_OPACITY, blur: j === i ? 0 : DIM_BLUR }))
+  slideAnims.forEach((a, j) => a.start({ opacity: j === i ? 1 : 0, scale: j === i ? 1 : 1.06 }))
+  stepSlides.forEach((d, j) => { d.firstElementChild.alt = j === i ? STEPS[j].alt : "" })
+  turn.start({ rotate: LAST_TILT - (STEPS.length - 1 - i) * TILT_STEP })
+  /* Re-created on every step so each sentence assembles word by word. */
+  caption.style.setProperty("--cap-w", STEPS[i].w)
+  caption.textContent = ""
+  const p = document.createElement("p")
+  p.textContent = STEPS[i].desc
+  caption.appendChild(p)
+  textEngine(p, { ...COPY, mode: "once" })
+}
+setStep(0)
+stepItems.forEach((li, i) => {
+  li.addEventListener("mouseenter", () => setStep(i))
+  li.addEventListener("click", () => setStep(i))
+  li.addEventListener("focus", () => setStep(i))
+})
+stage.addEventListener("pointermove", (e) => {
+  if (REDUCED) return
+  const r = stage.getBoundingClientRect()
+  const px = (e.clientX - r.left) / r.width - 0.5
+  const py = (e.clientY - r.top) / r.height - 0.5
+  tilt.start({ rotateX: -py * MAX_TILT * 2, rotateY: px * MAX_TILT * 2 })
+  depth.start({ x: px * MAX_DEPTH, y: py * MAX_DEPTH, scale: 1.12 })
+})
+stage.addEventListener("pointerleave", () => {
+  tilt.start({ rotateX: 0, rotateY: 0 })
+  depth.start({ x: 0, y: 0, scale: 1.12 })
+})
+/* Below 1440 there is no pointer to move the stage on, so it advances itself —
+   only while at least 40% in view; a real mouse switches it off for good. */
+let autoplay = true, stageInView = false
+observe(stage, (v) => { stageInView = v }, { threshold: 0.4 })
+stage.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") autoplay = false })
+if (!REDUCED) {
+  setInterval(() => {
+    if (!autoplay || !stageInView || !(viewportWidth > 0 && viewportWidth < 1440)) return
+    setStep((activeStep + 1) % STEPS.length)
+  }, AUTO_STEP_MS)
+}
+scrub(document.getElementById("process-scrub"), document.getElementById("process-parallax"), {
+  start: "top bottom", end: "bottom top", from: { y: 70 }, to: { y: -70 },
+  config: { tension: 120, friction: 26 }, interval: 32,
+})
+
+/* ==========================================================================
+   5 — TEAM
+   ========================================================================== */
+textEngine(document.getElementById("team-title"), { ...HEAD, mode: "once", delayIn: ENTRY_DELAY })
+textEngine(document.getElementById("team-intro"), { ...COPY, gap: "word", mode: "always", delayIn: ENTRY_DELAY + 160 })
+
+const TEAM = [
+  { eyebrow: "01 // SIMULATED TESTING", name: "The harness", bio: "Cases run against a simulated wallet with loss rules and multiple seeds.", role: "attack corpus", exp: "8 ", label: "families", src: "../diagrams/harness.svg", alt: "Illustration of a testing interface" },
+  { eyebrow: "02 // INDEPENDENT REPLAY", name: "The attesters", bio: "Bonded operators replay the bundle and sign matching outcomes.", role: "attestation", exp: "2 ", label: "signatures", src: "../diagrams/attesters.svg", alt: "Illustration of independent attesters" },
+  { eyebrow: "03 // VERSIONED RESULT", name: "The registry", bio: "Ratings identify the agent version, corpus, seed count and expiry.", role: "public record", exp: "30 ", label: "days maximum", src: "../monument.png", alt: "Bollard monument against a pale blue sky" },
+]
+const ROW_HIDDEN = { opacity: 0, y: -28, filter: "blur(14px)" }
+const ROW_SHOWN = { opacity: 1, y: 0, filter: "blur(0px)" }
+const ROW_REVEAL = { tension: 55, friction: 22 }
+const ROW_STAGGER = 220
+const SLIDE = { tension: 480, friction: 42 }
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+const rosterList = document.getElementById("roster-list")
+TEAM.forEach((m, i) => {
+  const li = document.createElement("li")
+  li.className = "row"
+  li.tabIndex = 0
+  li.innerHTML =
+    '<div class="row-copy">' +
+      '<div class="row-head"><p class="row-eyebrow">' + esc(m.eyebrow) + '</p><p class="row-name">' + esc(m.name) + "</p></div>" +
+      '<p class="row-bio">' + esc(m.bio) + "</p>" +
+    "</div>" +
+    '<div class="row-pair">' +
+      '<div class="row-portrait"><img class="fill-img" loading="lazy" alt="' + m.alt + '" src="' + ASSET_BASE + "/" + m.src + '" /></div>' +
+      '<div class="row-meta">' +
+        '<span class="row-role"><span aria-hidden="true" class="row-dot"></span>' + esc(m.role) + "</span>" +
+        '<span class="row-exp"><span data-count></span><span class="on-muted-meta">' + m.label + "</span></span>" +
+      "</div>" +
+    "</div>"
+  rosterList.appendChild(li)
+  watchImg(li.querySelector("img"))
+
+  /* The figure reserves its final width, so the line never reflows while the
+     digits climb. */
+  const host = li.querySelector("[data-count]")
+  const fig = splitFigure(m.exp)
+  const box = document.createElement("span")
+  box.className = "count-box"
+  const ghost = document.createElement("span")
+  ghost.className = "ghost"
+  ghost.setAttribute("aria-hidden", "true")
+  ghost.textContent = fig.target.toFixed(fig.decimals)
+  const liveSpan = document.createElement("span")
+  liveSpan.className = "live"
+  const digits = countingDigits(fig)
+  liveSpan.appendChild(digits.node)
+  box.append(ghost, liveSpan)
+  host.append(fig.prefix, box, fig.suffix)
+  let counted = false
+  observe(host, (v) => { if (v && !counted) { counted = true; digits.play(0) } })
+
+  textEngine(li.querySelector(".row-bio"), { ...COPY, gap: "word", mode: "always" })
+  inview(li, { mode: "once", delayIn: ENTRY_DELAY + i * ROW_STAGGER, from: ROW_HIDDEN, to: ROW_SHOWN, config: ROW_REVEAL })
+  inview(li.querySelector(".row-portrait"), { mode: "once", delayIn: ENTRY_DELAY + i * ROW_STAGGER + 120, from: { opacity: 0, scale: 1.06 }, to: { opacity: 1, scale: 1 }, config: SLIDE })
+  li.addEventListener("mouseenter", () => setRow(i))
+  li.addEventListener("focus", () => setRow(i))
+})
+/* At 1440 one portrait slot carries itself to the active row. */
+const travelSlot = document.getElementById("travel-slot")
+const travelSlides = TEAM.map((m, i) => {
+  const d = document.createElement("div")
+  d.className = "abs-fill"
+  d.innerHTML = '<img class="fill-img" loading="lazy" alt="' + m.alt + '" src="' + ASSET_BASE + "/" + m.src + '" />'
+  travelSlot.appendChild(d)
+  watchImg(d.firstElementChild)
+  return new Anim(d, { opacity: i === 0 ? 1 : 0, scale: i === 0 ? 1 : 1.06 }, SLIDE)
+})
+const travel = new Anim(travelSlot, { y: 0 }, SLIDE)
+let rowPitch = 215, activeRow = 0
+function measurePitch() {
+  const rows = rosterList.children
+  if (rows.length < 2) return
+  rowPitch = rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top
+  travel.start({ y: activeRow * rowPitch })
+}
+measurePitch()
+window.addEventListener("resize", measurePitch)
+function setRow(i) {
+  if (i === activeRow) return
+  activeRow = i
+  travel.start({ y: i * rowPitch })
+  travelSlides.forEach((a, j) => a.start({ opacity: j === i ? 1 : 0, scale: j === i ? 1 : 1.06 }))
+}
+inview(document.getElementById("travel"), { mode: "once", delayIn: ENTRY_DELAY, from: ROW_HIDDEN, to: ROW_SHOWN, config: ROW_REVEAL })
+
+/* ==========================================================================
+   6 — CONTACT
+   ========================================================================== */
+const CONTACT_REVEAL = { tension: 200, friction: 30 }
+scrub(document.getElementById("contact-scrub"), document.getElementById("contact-layer"), {
+  start: "top bottom", end: "bottom bottom", from: { y: "-15%" }, to: { y: "0%" },
+  config: { tension: 120, friction: 26 }, interval: 32,
+})
+document.querySelectorAll("[data-contact-li]").forEach((li, i) => {
+  inview(li, { mode: "once", delayIn: ENTRY_DELAY + i * ENTRY_STAGGER, from: { opacity: 0, y: 14 }, to: { opacity: 1, y: 0 }, config: CONTACT_REVEAL })
+})
+inview(document.getElementById("contact-details"), { mode: "once", delayIn: ENTRY_DELAY + 140, from: { opacity: 0, y: 16 }, to: { opacity: 1, y: 0 }, config: CONTACT_REVEAL })
+inview(document.getElementById("legal-links"), { mode: "once", delayIn: ENTRY_DELAY + 320, from: { opacity: 0, y: 10 }, to: { opacity: 1, y: 0 }, config: CONTACT_REVEAL })
+inview(document.getElementById("legal-copy"), { mode: "once", delayIn: ENTRY_DELAY + 400, from: { opacity: 0, y: 10 }, to: { opacity: 1, y: 0 }, config: CONTACT_REVEAL })
+
+document.getElementById("contact-form").addEventListener("submit", (e) => { e.preventDefault(); const f=e.currentTarget; const status=document.getElementById("form-status"); try { let previous={}; try { const stored=JSON.parse(localStorage.getItem("bollard-builder")||"{}"); if(stored&&typeof stored==="object"&&!Array.isArray(stored)) previous=stored } catch {} localStorage.setItem("bollard-builder",JSON.stringify({...previous,...Object.fromEntries(new FormData(f))})); status.textContent="Draft saved in this browser. No request was sent." } catch { status.textContent="Could not save in this browser." } status.hidden=false; });
+
+/* ==========================================================================
+   The opening panel
+   ========================================================================== */
+const HOLD_AT = 0.72, MAX_WAIT = 4000, WARM_BUDGET = 3000
+const CARD_LEAD = 180, CARD_INTERVAL = 240, FINALE_HOLD = 280, RELEASE_AT = 0.35
+const FINALE_LAYER_DEPTH = 1.3
+const FILL = { tension: 60, friction: 30 }
+const FINISH = { tension: 150, friction: 30, clamp: true }
+const HANDOFF = { tension: 210, friction: 34, clamp: true }
+const CARD = { tension: 190, friction: 24 }
+const EXPAND = { tension: 80, friction: 16, clamp: true }
+const LEAVE = { tension: 320, friction: 30, clamp: true }
+const TILTS = [-12, 9, -5, 14, -8]
+
+const pl = document.getElementById("pl")
+const deck = document.getElementById("pl-deck")
+const slot = document.getElementById("pl-slot")
+const markEl = document.getElementById("pl-mark")
+const clipEl = document.getElementById("pl-clip")
+const pctEl = document.getElementById("pl-pct")
+const readout = document.getElementById("pl-readout")
+const finaleEl = document.getElementById("pl-finale")
+const finalePhoto = document.getElementById("pl-finale-photo")
+const finaleImg = document.getElementById("pl-finale-img")
+
+/* Hold the page still under the panel. */
+scrollEnabled(false)
+
+/* Where object-fit: cover draws the photo inside a frame whose image layer is
+   1.3x the frame's height and bottom-aligned — the hero's own layer. */
+function coverPlacement(frame, aspect) {
+  const layerHeight = frame.height * FINALE_LAYER_DEPTH
+  const wide = frame.width / Math.max(layerHeight, 1) > aspect
+  const width = wide ? frame.width : layerHeight * aspect
+  const height = wide ? frame.width / aspect : layerHeight
+  const cx = frame.left + frame.width / 2
+  const cy = frame.top + frame.height - layerHeight / 2
+  return { left: cx - width / 2, top: cy - height / 2, width, height }
+}
+function measureStage() {
+  const s = document.querySelector("[data-hero-stage]")
+  const r = s && s.getBoundingClientRect()
+  return r && r.width > 0 ? { left: r.left, top: r.top, width: r.width, height: r.height }
+    : { left: 0, top: 0, width: document.documentElement.clientWidth, height: window.innerHeight }
+}
+
+/* The readout's veil and the monogram's flight share one spring group. */
+const handoff = new Anim(markEl, { x: 0, y: 0, scale: 1 }, HANDOFF)
+const veil = new Anim(readout, { opacity: 1 }, HANDOFF)
+
+/* The fill: the monogram's top copy is clipped from the top. */
+const fill = new Anim(null, { progress: 0 }, FILL, (a) => {
+  const p = a.value("progress")
+  clipEl.style.clipPath = "inset(" + (1 - p) * 100 + "% 0 0 0)"
+  pctEl.dataset.text = String(Math.round(p * 100)).padStart(2, "0") + "%"
+})
+
+/* The deck: each card swings in past its angle and settles on it. */
+const cards = [...deck.children].map((c, i) => new Anim(c, { opacity: 0, scale: 0.82, rotate: TILTS[i] * 1.8, y: 48 }, CARD))
+
+/* The finale: `box` is the frame in viewport px, drawn as a clip; the photo
+   inside is laid out once at its covering size and placed by a transform. */
+let aspect = null
+let layer = { width: 0, height: 0 }
+let finaleIn = { opacity: 0, scale: 0.82, y: 48 }
+let box = null
+const finaleAnim = new Anim(null, finaleIn, CARD, (a) => { finaleIn = { opacity: a.value("opacity"), scale: a.value("scale"), y: a.value("y") }; drawFinale() })
+box = new Anim(null, { left: 0, top: 0, width: 0, height: 0 }, EXPAND, () => drawFinale())
+function drawFinale() {
+  if (!box || !box.ch.left) return
+  const b = { left: box.value("left"), top: box.value("top"), width: box.value("width"), height: box.value("height") }
+  finaleEl.style.opacity = finaleIn.opacity
+  finaleEl.style.transform = "translate3d(0, " + finaleIn.y + "px, 0) scale(" + finaleIn.scale + ")"
+  finaleEl.style.transformOrigin = (b.left + b.width / 2) + "px " + (b.top + b.height / 2) + "px"
+  finaleEl.style.clipPath = "inset(" + b.top + "px calc(100% - " + (b.left + b.width) + "px) calc(100% - " + (b.top + b.height) + "px) " + b.left + "px)"
+  finalePhoto.style.width = layer.width + "px"
+  finalePhoto.style.height = layer.height + "px"
+  if (!aspect || layer.width === 0) { finalePhoto.style.transform = "scale(0)"; return }
+  const d = coverPlacement(b, aspect)
+  finalePhoto.style.transform = "translate3d(" + d.left + "px, " + d.top + "px, 0) scale(" + d.width / layer.width + ")"
+}
+function fitLayer(stageRect) {
+  if (!aspect) return
+  const c = coverPlacement(stageRect, aspect)
+  layer = { width: c.width, height: c.height }
+  drawFinale()
+}
+function readAspect() {
+  if (finaleImg.naturalWidth > 0 && finaleImg.naturalHeight > 0) {
+    aspect = finaleImg.naturalWidth / finaleImg.naturalHeight
+    if (!expanding) fitLayer(measureStage())
+  }
+}
+let expanding = false
+/* Until it grows, the frame is the deck's own slot. */
+function placeOnDeck() {
+  if (expanding) return
+  const r = deck.getBoundingClientRect()
+  box.set({ left: r.left, top: r.top, width: r.width, height: r.height })
+  fitLayer(measureStage())
+}
+finaleImg.addEventListener("load", readAspect)
+readAspect()
+placeOnDeck()
+window.addEventListener("resize", placeOnDeck)
+
+/* The deal — on a fixed beat, independent of loading. */
+const total = cards.length + 1
+let dealt = 0
+function deal(n) {
+  dealt = n
+  cards.forEach((c, i) => {
+    const shown = i < dealt
+    c.start({ opacity: shown && !expanding ? 1 : 0, scale: shown ? 1 : 0.82, rotate: shown ? TILTS[i] : TILTS[i] * 1.8, y: shown ? 0 : 48 })
+  })
+  if (dealt >= total) finaleAnim.start({ opacity: 1, scale: 1, y: 0 })
+  maybeFinish()
+}
+if (REDUCED) deal(total)
+else for (let i = 0; i < total; i++) setTimeout(() => deal(i + 1), CARD_LEAD + i * CARD_INTERVAL)
+
+/* Progress creeps to HOLD_AT while loading; "loaded" is window load + fonts. */
+let target = 0
+const creep = setInterval(() => {
+  target = target >= HOLD_AT ? target : target + 0.12
+  fill.start({ progress: target }, { config: FILL })
+}, 240)
+let loaded = false
+function finishLoading() { if (loaded) return; loaded = true; maybeFinish() }
+Promise.all([
+  document.readyState === "complete" ? Promise.resolve() : new Promise((r) => window.addEventListener("load", () => r(), { once: true })),
+  document.fonts ? document.fonts.ready : Promise.resolve(),
+]).then(finishLoading)
+const failsafe = setTimeout(finishLoading, MAX_WAIT)
+
+let finishing = false
+function maybeFinish() {
+  if (finishing || !loaded || dealt < total) return
+  finishing = true
+  clearTimeout(failsafe)
+  setTimeout(() => {
+    clearInterval(creep)
+    target = 1
+    /* Clamped, so the mark tops out instead of easing at it. */
+    fill.start({ progress: 1 }, { config: FINISH, onRest: expand })
+  }, REDUCED ? 0 : FINALE_HOLD)
+}
+
+/* The mark flies to the header's logo slot; the header's own wordmark sits
+   exactly beneath it and takes over as the panel fades. */
+function flyToHeader() {
+  const from = markEl.getBoundingClientRect()
+  const to = slot.getBoundingClientRect()
+  handoff.start({
+    x: to.left + to.width / 2 - (from.left + from.width / 2),
+    y: to.top + to.height / 2 - (from.top + from.height / 2),
+    scale: to.width / from.width,
+  }, { immediate: REDUCED })
+  veil.start({ opacity: 0 }, { immediate: REDUCED })
+}
+
+function expand() {
+  expanding = true
+  deal(dealt) /* the deck clears from under the growing photo */
+  flyToHeader()
+  const s = measureStage()
+  fitLayer(s)
+  let grown = false
+  box.start(s, {
+    immediate: REDUCED,
+    onRest: () => {
+      if (grown) return
+      grown = true
+      /* Start scroll first — the scrollbar returns and narrows the hero —
+         then re-fit the photo to the settled stage before the panel lifts. */
+      scrollEnabled(true)
+      requestAnimationFrame(() => {
+        const settled = measureStage()
+        fitLayer(settled)
+        box.set(settled)
+        drawFinale()
+        leave()
+      })
+    },
+  })
+}
+
+const panel = new Anim(pl, { opacity: 1 }, LEAVE)
+function leave() {
+  /* Let the already-buffering hero start behind the departing panel. */
+  window.dispatchEvent(new Event("bollard:hero-reveal"))
+  if (REDUCED) markHandoff()
+  let left = false
+  panel.start({ opacity: 0 }, {
+    immediate: REDUCED,
+    onChange: (a) => { if (a.value("opacity") <= RELEASE_AT) markHandoff() },
+    onRest: () => {
+      markHandoff()
+      if (left) return
+      left = true
+      pl.remove()
+      scrollEnabled(true)
+      if (location.hash) { const target = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (target) lenis.scrollTo(target, { immediate: true }); }
+    },
+  })
+}
+
+/* ==========================================================================
+   Media warm-up — only after load, in an idle moment, under a budget: every
+   image with a box, in document order, four at a time.
+   ========================================================================== */
+function warmMedia(budgetMs) {
+  const deadline = performance.now() + budgetMs
+  const whenLaidOut = (timeout) => new Promise((resolve) => {
+    const end = performance.now() + timeout
+    const check = () => (document.body.scrollHeight > window.innerHeight || performance.now() >= end ? resolve() : requestAnimationFrame(check))
+    requestAnimationFrame(check)
+  })
+  const ready = (img) => (typeof img.decode === "function" ? img.decode() : Promise.resolve())
+  const sweep = async () => {
+    const fresh = [...document.querySelectorAll("img:not([loading=lazy])")].filter((img) => !img.hasAttribute("data-warmed") && (img.offsetWidth > 0 || img.offsetHeight > 0))
+    for (let i = 0; i < fresh.length; i += 4) {
+      if (performance.now() >= deadline) break
+      await Promise.all(fresh.slice(i, i + 4).map((img) => {
+        img.setAttribute("data-warmed", "")
+        return ready(img).catch(() => {})
+      }))
+    }
+    return fresh.length
+  }
+  const work = (async () => {
+    await whenLaidOut(Math.min(budgetMs, 2000))
+    for (let pass = 0; pass < 3; pass++) {
+      const found = await sweep()
+      if (!found || performance.now() >= deadline) break
+    }
+  })()
+  return Promise.race([work, new Promise((r) => setTimeout(r, Math.max(0, deadline - performance.now())))])
+}
+{
+  const begin = () => {
+    const start = () => warmMedia(WARM_BUDGET)
+    if (window.requestIdleCallback) window.requestIdleCallback(start, { timeout: 2000 })
+    else setTimeout(start, 500)
+  }
+  if (document.readyState === "complete") begin()
+  else window.addEventListener("load", begin, { once: true })
+}
+</script>
+<script src="shared.js?v=20261102f" defer></script><script type="module" src="assets/scrolltide/bollard.js?v=20261102e"></script></body>
+</html>
+

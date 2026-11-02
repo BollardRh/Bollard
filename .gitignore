@@ -1,0 +1,27 @@
+films/**/node_modules/
+films/**/out/
+scrolltide-src/node_modules/
+
+# OS / editor
+.DS_Store
+
+# Dependencies and build output
+node_modules/
+contracts/artifacts/
+contracts/cache/
+contracts/out/
+contracts/typechain-types/
+services/dist/
+wallet-src/dist/
+
+# Local env and platform state
+.env
+.env.*
+!.env.example
+.vercel/
+supabase/.temp/
+supabase/.branches/
+contracts/broadcast/**/dry-run/
+
+# public repo checkout used by tools/publish-public.sh
+.public/

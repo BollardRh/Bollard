@@ -1,0 +1,333 @@
+/* ==========================================================================
+   CardFolder — a folder-tab card that slides open to reveal its artwork.
+   No dependencies, no JS animation: one transform does the work.
+   ========================================================================== */
+
+.cf-card {
+  /* Overridable defaults; the component writes over these inline. */
+  --cf-frame: #0a0a30;
+  --cf-panel: #16165a;
+  --cf-title: #fff;
+  --cf-desc: rgba(255, 255, 255, 0.52);
+  --cf-arrow: #fff;
+  --cf-edge: rgba(255, 255, 255, 0.16);
+  --cf-aspect: 0.78;
+  --cf-radius: 28px;
+  --cf-frame-w: 7px;
+  --cf-closed: 20%;
+  --cf-open: 54%;
+  --cf-dur: 720ms;
+  --cf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cf-subject: none;
+  --cf-subject-top: 4%;
+  --cf-subject-height: 50%;
+  --cf-subject-drop: 46%;
+  --cf-subject-scale: 0.88;
+  --cf-sheen: none;
+  --cf-sheen-blend: overlay;
+  --cf-sheen-opacity: 0.45;
+
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: var(--cf-frame-w);
+  border: 0;
+  border-radius: var(--cf-radius);
+  background: var(--cf-frame);
+  box-shadow: 0 22px 55px -26px rgba(9, 12, 34, 0.55);
+  text-align: left;
+  text-decoration: none;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The slide runs on a sampled damped spring (~12.6% overshoot by default).
+   Browsers without linear() keep the cubic-bezier, which is why the spring
+   lives in its own var behind @supports rather than on the transition. */
+.cf-card {
+  --cf-slide-ease: var(--cf-ease);
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  .cf-card {
+    --cf-slide-ease: var(--cf-spring, linear(0, 0.0357, 0.1273, 0.2536, 0.397, 0.543, 0.6811, 0.804, 0.9075, 0.9897, 1.0506, 1.0919, 1.1159, 1.1257, 1.1243, 1.1149, 1.1002, 1.0826, 1.0641, 1.0462, 1.0299, 1.0159, 1.0046, 0.996, 0.9899, 0.9862, 0.9844, 0.9841, 0.985, 0.9866, 0.9888, 0.9911, 0.9934, 0.9955, 0.9974, 0.999, 1.0002, 1.001, 1.0016, 1.0019, 1));
+  }
+}
+
+/* The card is the query container; `.cf-inner` reads from it. A container
+   cannot size its own font from itself, which is why this lives up here. */
+@supports (width: 1cqw) {
+  .cf-card {
+    container-type: inline-size;
+  }
+}
+
+.cf-card:is(a, button) {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.cf-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--cf-aspect);
+  overflow: hidden;
+  border-radius: calc(var(--cf-radius) - var(--cf-frame-w));
+  background: #05060a;
+  /* Type scales with the card, so one component serves every size. */
+  font-family: inherit;
+  font-size: 16px;
+}
+
+@supports (width: 1cqw) {
+  .cf-inner {
+    font-size: 5cqw;
+  }
+}
+
+/* --- Artwork ------------------------------------------------------------ */
+
+.cf-art {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform: scale(1);
+  transition: transform calc(var(--cf-dur) * 1.2) var(--cf-ease);
+  will-change: transform;
+}
+
+/* Iridescent chrome sheen. Three layers, because a `filter` also applies to
+   an element's children: the blurred colour sweep and the crisp specular
+   highlight have to live on separate boxes or the highlight goes soft too. */
+.cf-glass {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition: transform calc(var(--cf-dur) * 1.3) var(--cf-ease);
+  will-change: transform;
+}
+
+/* Blurred conic sweep — the chromatic bloom in the glass. Masked toward the
+   upper area so it reads as a lit highlight, not a wash over the whole card. */
+.cf-glass::before {
+  content: '';
+  position: absolute;
+  inset: -18%;
+  background: var(--cf-sheen);
+  filter: blur(30px) saturate(150%);
+  opacity: var(--cf-sheen-opacity);
+  mix-blend-mode: var(--cf-sheen-blend);
+  -webkit-mask-image: radial-gradient(62% 46% at 42% 16%, #000 0%, rgba(0, 0, 0, 0.4) 48%, transparent 74%);
+  mask-image: radial-gradient(62% 46% at 42% 16%, #000 0%, rgba(0, 0, 0, 0.4) 48%, transparent 74%);
+}
+
+/* Crisp specular streak across the curve of the glass. */
+.cf-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    104deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.42) 44%,
+    rgba(255, 255, 255, 0.9) 48%,
+    rgba(255, 255, 255, 0.16) 52%,
+    transparent 64%
+  );
+  opacity: 0.55;
+  mix-blend-mode: soft-light;
+}
+
+.cf-grain {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  opacity: 0.32;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* Cut-out subject. It sits above the artwork but below the folder, parked far
+   enough down to be completely hidden at rest, so hovering lifts it into view
+   from behind the tab rather than fading it in. */
+.cf-subject {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: var(--cf-subject-top);
+  height: var(--cf-subject-height);
+  display: block;
+  pointer-events: none;
+  background: var(--cf-subject) center bottom / contain no-repeat;
+  filter: drop-shadow(0 16px 26px rgba(0, 0, 0, 0.4));
+  transform: translate3d(0, var(--cf-subject-drop), 0)
+    scale(var(--cf-subject-scale));
+  transition: transform var(--cf-dur) var(--cf-slide-ease);
+  will-change: transform;
+}
+
+/* --- The folder --------------------------------------------------------- */
+
+.cf-panel {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform: translate3d(0, var(--cf-closed), 0);
+  transition: transform var(--cf-dur) var(--cf-slide-ease);
+  will-change: transform;
+}
+
+/* Solid/gradient fill, clipped to the folder outline by an SVG mask so the
+   face can be any CSS background — not just a flat colour. */
+.cf-face {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: var(--cf-panel);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+/* Hairline along the top edge, following the notch exactly. */
+.cf-edge {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: var(--cf-edge);
+  stroke-width: 1;
+}
+
+/* --- Number + arrow: they ride with the folder -------------------------- */
+
+.cf-head {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 1.45em 1.6em 0;
+}
+
+.cf-number {
+  font-size: 4.15em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  color: var(--cf-title);
+}
+
+.cf-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.3em;
+  height: 1.3em;
+  color: var(--cf-arrow);
+  transition: transform var(--cf-dur) var(--cf-slide-ease);
+}
+
+.cf-icon > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* --- Title + description: pinned to the card, not the folder ------------ */
+
+.cf-text {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1.6em;
+}
+
+.cf-title {
+  font-size: 0.92em;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--cf-title);
+}
+
+.cf-desc {
+  margin-top: 0.4em;
+  font-size: 0.88em;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--cf-desc);
+}
+
+/* --- Open state --------------------------------------------------------- */
+
+.cf-card:hover .cf-panel,
+.cf-card:focus-visible .cf-panel {
+  transform: translate3d(0, var(--cf-open), 0);
+}
+
+.cf-card:hover .cf-art,
+.cf-card:focus-visible .cf-art {
+  transform: scale(1.06);
+}
+
+.cf-card:hover .cf-subject,
+.cf-card:focus-visible .cf-subject {
+  transform: translate3d(0, 0, 0) scale(1);
+  /* Trails the folder slightly, so the two read as one gesture. */
+  transition-delay: 50ms;
+}
+
+.cf-card:hover .cf-icon,
+.cf-card:focus-visible .cf-icon {
+  transform: translate3d(0.12em, -0.12em, 0);
+}
+
+/* The sheen drifts as the folder opens, so the glass reads as lit rather
+   than printed on. */
+.cf-card:hover .cf-glass,
+.cf-card:focus-visible .cf-glass {
+  transform: translate3d(-3%, -5%, 0) scale(1.1);
+}
+
+.cf-card:focus-visible {
+  outline: 2px solid var(--cf-title);
+  outline-offset: 3px;
+}
+
+/* Touch devices never hover — show the artwork by default. */
+@media (hover: none) {
+  .cf-panel {
+    transform: translate3d(0, var(--cf-open), 0);
+  }
+
+  .cf-subject {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-art,
+  .cf-panel,
+  .cf-subject,
+  .cf-icon,
+  .cf-glass {
+    transition-duration: 1ms;
+  }
+}

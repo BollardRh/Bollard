@@ -1,0 +1,28 @@
+{
+  "mode": "build-site",
+  "style": "clarix-style",
+  "scene": "onyx-cubes",
+  "scenePreview": "https://www.getlayers.ai/?layer=onyx-cubes",
+  "tint": {
+    "bgTop": "#d8e9f5",
+    "bgBottom": "#adc6d9",
+    "cubeColor": "#9f3b2c",
+    "envTint": "#262c35"
+  },
+  "compositions": [
+    "artist-hero",
+    "vexon-about"
+  ],
+  "motionSites": "Data Signal and Rocket CTA glass treatment, adapted to Bollard",
+  "hero": "dark-ocean-foam",
+  "heroPreview": "https://www.getlayers.ai/?layer=dark-ocean-foam",
+  "heroPalette": [
+    "#101e29",
+    "#213d50",
+    "#527b91",
+    "#9fbeca",
+    "#e6f1f4"
+  ],
+  "heroSourceResolution": "1920x1440",
+  "heroNotes": "GetLayers source is 1920x1440 despite catalog 4K description; H.264 desktop and mobile derivatives, navy overlay."
+}

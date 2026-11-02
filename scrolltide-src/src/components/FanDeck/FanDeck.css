@@ -1,0 +1,303 @@
+/* ==========================================================================
+   FanDeck — a hand of cards splayed from a hinge below the deck, the middle
+   one standing upright with its plate. Drag, swipe, click a card, use the
+   buttons or the arrow keys. No dependencies.
+
+   The spread is one rotation about `transform-origin: 50% <hinge>`, set past
+   100% so the pivot sits below the card. Everything else — the arc, the way
+   the bottoms stay gathered while the tops swing wide — falls out of that one
+   origin rather than being authored per card.
+
+   `--deck-t` is the one number that says how focused a card is: 1 in the
+   middle, 0 a full place away, fractional while a finger is dragging. The
+   label, the plate and the zoom all read it, so they move in step.
+   ========================================================================== */
+
+.deck {
+  --deck-bg: #ffffff;
+  --deck-label: #ffffff;
+  --deck-plate: #e9ff3d;
+  --deck-plate-text: #0d0f12;
+  --deck-control: #111317;
+  --deck-control-icon: #ffffff;
+  --deck-control-hover: #2a2e36;
+  --deck-counter: rgba(17, 19, 23, 0.42);
+  --deck-counter-text: #ffffff;
+  --deck-shadow-color: rgba(24, 26, 34, 0.26);
+
+  --deck-aspect: 1.44;
+  --deck-card-w: 35cqw;
+  --deck-card-h: 52.85cqw;
+  --deck-corner: 1.75cqw;
+  --deck-hinge: 160%;
+  --deck-zoom: 1.07;
+
+  --deck-speed: 0.78s;
+  --deck-ease: ease;
+
+  /* Sized off the deck but bounded — a full-bleed fan would otherwise carry a
+     60px label. */
+  --deck-label-size: clamp(16px, 2.5cqw, 34px);
+  --deck-title-size: clamp(13px, 1.85cqw, 24px);
+  --deck-cta-size: clamp(9px, 1.02cqw, 13px);
+
+  /* Children read every length from here, so the fan keeps its proportions at
+     any width without a media query. */
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  background: var(--deck-bg);
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  cursor: grab;
+  /* Vertical scrolling still belongs to the page. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.deck:active {
+  cursor: grabbing;
+}
+
+.deck:focus-visible {
+  outline: 2px solid var(--deck-control);
+  outline-offset: 4px;
+}
+
+.deck-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--deck-aspect);
+}
+
+/* --- the card ------------------------------------------------------------ */
+
+.deck-card {
+  position: absolute;
+  /* The deck hangs from the top of the stage; the hinge is off the bottom. */
+  top: 2%;
+  left: 50%;
+  width: var(--deck-card-w);
+  height: var(--deck-card-h);
+
+  /* Read right to left: scale and rotate happen about the hinge, then the card
+     drops by `--deck-dy`, then the whole thing is pulled back onto its anchor.
+     The last translate is in the parent's axes, so it centres the card no
+     matter how far it has swung. */
+  transform-origin: 50% var(--deck-hinge);
+  transform:
+    translateX(-50%)
+    translateY(var(--deck-dy))
+    rotate(var(--deck-rot, 0deg))
+    scale(var(--deck-sc, 1));
+
+  border-radius: var(--deck-corner);
+  overflow: hidden;
+  background: #0c0e12;
+  box-shadow: 0 1.4cqw 3.2cqw -0.6cqw var(--deck-shadow-color);
+  cursor: pointer;
+  will-change: transform;
+
+  transition-property: transform, opacity;
+  transition-duration: var(--deck-speed);
+  transition-timing-function: var(--deck-ease);
+}
+
+.deck-media {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Sits zoomed in until its card takes focus, so focusing eases it back out
+     rather than simply lighting it up. */
+  transform: scale(calc(var(--deck-zoom) - (var(--deck-zoom) - 1) * var(--deck-t, 0)));
+  transition: transform var(--deck-speed) var(--deck-ease);
+}
+
+/* Holds the label at the top and the plate at the bottom off the artwork. */
+.deck-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(8, 9, 14, 0.34) 0%, rgba(8, 9, 14, 0) 26%),
+    linear-gradient(0deg, rgba(8, 9, 14, 0.26) 0%, rgba(8, 9, 14, 0) 24%);
+}
+
+/* --- type ---------------------------------------------------------------- */
+
+.deck-label {
+  position: absolute;
+  top: 4.6%;
+  left: 6.5%;
+  font-size: var(--deck-label-size);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--deck-label);
+  pointer-events: none;
+}
+
+/* The one saturated block in a photographic composition, which is what makes
+   it read as a button rather than as part of the picture. */
+.deck-plate {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 5.2%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5cqw;
+  padding: 1.5cqw 1.9cqw;
+  border-radius: calc(var(--deck-corner) * 0.62);
+  background: var(--deck-plate);
+  color: var(--deck-plate-text);
+
+  /* Held back until the card is most of the way upright, then brought up. The
+     plate is the payoff of the move, so it should arrive after it. */
+  opacity: clamp(0, calc((var(--deck-t, 0) - 0.62) * 2.8), 1);
+  transform: translateY(calc((1 - var(--deck-t, 0)) * 22%));
+  transition-property: opacity, transform;
+  transition-duration: var(--deck-speed);
+  transition-timing-function: var(--deck-ease);
+  pointer-events: none;
+}
+
+.deck-plate-title {
+  font-size: var(--deck-title-size);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.deck-plate-cta {
+  font-size: var(--deck-cta-size);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.82;
+}
+
+.deck-card.is-focused .deck-plate-cta {
+  pointer-events: auto;
+}
+
+.deck-card.is-focused .deck-plate-cta:hover {
+  opacity: 1;
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+.deck-controls {
+  position: relative;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7cqw;
+  /* Pulled up under the fan, where the reference tucks it. */
+  margin-top: -3cqw;
+  cursor: default;
+}
+
+.deck-counter {
+  padding: 0.28cqw 1cqw;
+  border-radius: 999px;
+  background: var(--deck-counter);
+  color: var(--deck-counter-text);
+  font-size: clamp(9px, 1.05cqw, 13px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+/* The middle button rides lower than the other two, so the cluster sits on a
+   shallow arc rather than a line. */
+.deck-buttons {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1cqw;
+}
+
+.deck-btn {
+  display: grid;
+  place-items: center;
+  width: clamp(34px, 4.4cqw, 58px);
+  height: clamp(34px, 4.4cqw, 58px);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--deck-control);
+  color: var(--deck-control-icon);
+  cursor: pointer;
+  transition: background-color 0.24s ease, transform 0.24s ease, opacity 0.24s ease;
+}
+
+.deck-btn--play {
+  margin-top: 1.7cqw;
+}
+
+.deck-btn svg {
+  width: 46%;
+  height: 46%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The play triangle is a solid mark, not an outlined one. */
+.deck-btn svg .deck-fill {
+  fill: currentColor;
+  stroke-width: 1.6;
+}
+
+.deck-btn:hover:not(:disabled) {
+  background: var(--deck-control-hover);
+  transform: translateY(-2px);
+}
+
+.deck-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.deck-btn:focus-visible {
+  outline: 2px solid var(--deck-control);
+  outline-offset: 3px;
+}
+
+/* --- dragging ------------------------------------------------------------ */
+
+/* While a finger is down the deck is written frame by frame from JS, so the
+   transitions have to get out of the way or every frame would chase the last
+   one. */
+.deck--dragging .deck-card,
+.deck--dragging .deck-media,
+.deck--dragging .deck-plate {
+  transition: none;
+}
+
+/* --- reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .deck {
+    --deck-speed: 0.001s;
+    --deck-zoom: 1;
+  }
+
+  .deck-btn {
+    transition: none;
+  }
+
+  .deck-btn:hover:not(:disabled) {
+    transform: none;
+  }
+}

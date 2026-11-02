@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Section · Colonnade</title>
+<!--
+  GetLayers · Section — Colonnade
+  A self-contained interactive column accordion. A row of chapter columns on paper; hover (or tap /
+  focus) a column and its art panel slides UP into view while the previously-shown one slides UP and
+  out the top — one continuous upward conveyor ("one in one"). The big headline + caption swap in the
+  same upward motion and the active column widens. Fully self-contained: every art panel is a layered
+  CSS mesh gradient (no icons, no image files, no libraries). Type: Space
+  Grotesk (display) + Inter (UI), Google Fonts. Art-direct everything from the CONFIG object.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #f4f2ee; overflow: hidden; }
+  #section { position: fixed; inset: 0; overflow: hidden;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    color: var(--ink);
+    --paper: #eaf2f5; --ink: #213643; --ink-2: #546c78; --line: rgba(33,54,67,.14);
+    --accent: #a6412f;
+    --slide: 900ms; --ease: cubic-bezier(.76, 0, .18, 1);
+  }
+
+  /* ---------- the column strip ---------- */
+  #strip { position: absolute; inset: 0; display: flex; background: var(--paper); }
+  .col { position: relative; flex: 1 1 0%; min-width: 0; overflow: hidden;
+    border-left: 1px solid var(--line); cursor: pointer; outline: none;
+    transition: flex-grow var(--slide) var(--ease); }
+  .col:first-child { border-left: 0; }
+  .col.-active { flex-grow: 2.5; }
+  .col::after { content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+    box-shadow: inset 0 0 0 1.5px transparent; transition: box-shadow .4s ease; }
+  .col:focus-visible::after { box-shadow: inset 0 0 0 2px var(--accent); }
+
+  /* the sliding art layer — clipped by the column, starts below, exits up */
+  .col__media { position: absolute; inset: 0; z-index: 1; transform: translateY(101%);
+    transition: transform var(--slide) var(--ease); will-change: transform; }
+  .col__media.-in  { transform: translateY(0); }
+  .col__media.-out { transform: translateY(-101%); }
+
+  /* legibility scrims so the overlaid caption + name read over any art */
+  .col__media::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(246,244,240,.45) 0%, rgba(246,244,240,0) 22%,
+                rgba(246,244,240,0) 68%, rgba(246,244,240,.62) 100%); }
+
+  /* column chrome (always visible, above the art) */
+  .col__cap { position: absolute; top: 20px; left: 20px; right: 16px; z-index: 2;
+    display: flex; align-items: baseline; gap: 9px; font-size: 11px; color: var(--ink-2);
+    letter-spacing: .02em; opacity: 0; transform: translateY(-6px);
+    transition: opacity .5s ease .1s, transform .5s var(--ease) .1s; }
+  .col.-active .col__cap { opacity: 1; transform: none; }
+  .col__cap b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .1em; }
+  .col__name { position: absolute; left: 20px; bottom: 26px; right: 16px; z-index: 2; margin: 0;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: clamp(15px, 1.5vw, 19px);
+    line-height: 1.08; letter-spacing: .01em; text-transform: uppercase; color: var(--ink);
+    transition: color .4s ease; text-shadow: 0 1px 12px rgba(246,244,240,.5); }
+  .col__name span { display: block; color: var(--ink-2); transition: color .4s ease; }
+  .col.-active .col__name span { color: var(--ink); }
+
+  /* ---------- art panels: pure layered mesh gradients (no icons) ---------- */
+  .scene { position: absolute; inset: 0; overflow: hidden; background: var(--s-bg); }
+  /* a soft top sheen unifies every panel and gives it a lit, premium finish */
+  .scene::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(120% 62% at 28% -12%, rgba(255,255,255,.55), rgba(255,255,255,0) 58%);
+    mix-blend-mode: soft-light; }
+
+  /* approach — warm amber / sand */
+  .scene--approach { --s-bg:
+      radial-gradient(120% 95% at 16% 10%, #fcf6ea 0%, rgba(252,246,234,0) 54%),
+      radial-gradient(95% 85% at 90% 20%, #f2e3bf 0%, rgba(242,227,191,0) 58%),
+      radial-gradient(130% 120% at 74% 104%, #dcbd84 0%, rgba(220,189,132,0) 60%),
+      linear-gradient(148deg, #efe6d3 0%, #e5d4b3 54%, #d5c095 100%); }
+  /* technology — cool steel blue */
+  .scene--tech { --s-bg:
+      radial-gradient(115% 95% at 84% 12%, #f4f8fc 0%, rgba(244,248,252,0) 54%),
+      radial-gradient(100% 90% at 10% 30%, #d6e3f0 0%, rgba(214,227,240,0) 58%),
+      radial-gradient(130% 120% at 60% 108%, #a2b6cf 0%, rgba(162,182,207,0) 60%),
+      linear-gradient(158deg, #edf3f9 0%, #d4e0ee 54%, #b9c8dc 100%); }
+  /* story — dusty rose / blush */
+  .scene--story { --s-bg:
+      radial-gradient(115% 92% at 22% 14%, #fcf2ef 0%, rgba(252,242,239,0) 54%),
+      radial-gradient(100% 95% at 88% 28%, #eecdc4 0%, rgba(238,205,196,0) 58%),
+      radial-gradient(130% 125% at 70% 104%, #cf988f 0%, rgba(207,152,143,0) 60%),
+      linear-gradient(153deg, #f6ebe7 0%, #e9cec7 54%, #d4aaa0 100%); }
+  /* craft — muted sage green */
+  .scene--craft { --s-bg:
+      radial-gradient(115% 92% at 80% 12%, #f1f3ea 0%, rgba(241,243,234,0) 52%),
+      radial-gradient(110% 100% at 14% 34%, #cdd9bb 0%, rgba(205,217,187,0) 58%),
+      radial-gradient(135% 130% at 62% 106%, #90a473 0%, rgba(144,164,115,0) 60%),
+      linear-gradient(153deg, #ebefe0 0%, #d2debd 54%, #b1c295 100%); }
+
+  /* ---------- header ---------- */
+  #top { position: absolute; top: 0; left: 0; right: 0; z-index: 6;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: clamp(18px, 3vh, 30px) clamp(20px, 3.4vw, 44px); pointer-events: none; }
+  #top > * { pointer-events: auto; }
+  #brand { display: inline-flex; align-items: center; gap: 10px; font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600; font-size: 16px; letter-spacing: .01em; }
+  #brand .ast { color: var(--accent); font-size: 18px; line-height: 0; }
+  #nav { display: flex; gap: clamp(16px, 2vw, 30px); }
+  #nav a { color: var(--ink-2); text-decoration: none; font-size: 13px; font-weight: 500; letter-spacing: .02em;
+    transition: color .2s; }
+  #nav a:hover, #nav a:focus-visible { color: var(--ink); }
+
+  /* ---------- headline (swaps in the same upward motion) ---------- */
+  #headline { position: absolute; top: clamp(88px, 15vh, 168px); left: 50%; transform: translateX(-50%);
+    z-index: 5; width: min(92vw, 760px); height: clamp(96px, 20vh, 200px); overflow: hidden;
+    pointer-events: none; text-align: center; }
+  .head { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start; gap: 16px;
+    transform: translateY(112%); opacity: 0;
+    transition: transform var(--slide) var(--ease), opacity calc(var(--slide) * .7) ease; }
+  .head.-in  { transform: translateY(0); opacity: 1; }
+  .head.-out { transform: translateY(-112%); opacity: 0; }
+  .head h2 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 400;
+    font-size: clamp(26px, 4.4vw, 56px); line-height: 1.04; letter-spacing: .005em;
+    text-transform: uppercase; color: var(--ink); text-wrap: balance; }
+  .head .pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 9px;
+    padding: 10px 20px; border: 1px solid var(--line); border-radius: 999px; background: rgba(246,244,240,.5);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    font-size: 12.5px; font-weight: 500; letter-spacing: .04em; color: var(--ink); text-decoration: none;
+    transition: background .25s ease, border-color .25s ease, transform .2s ease; }
+  .head .pill:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); transform: translateY(-1px); }
+
+  /* ---------- responsive: stack into a vertical accordion ---------- */
+  @media (max-width: 860px) {
+    #strip { flex-direction: column; }
+    .col { border-left: 0; border-top: 1px solid var(--line); min-height: 58px; }
+    .col:first-child { border-top: 0; }
+    .col.-active { flex-grow: 3.4; }
+    .col__media { transform: translateY(101%); }
+    .col__media.-out { transform: translateY(-101%); }
+    .col__cap { top: 16px; }
+    .col__name { bottom: 16px; font-size: 15px; }
+    #headline { top: auto; bottom: clamp(28px, 6vh, 52px); height: auto; width: min(92vw, 560px); }
+    .head { position: relative; transform: translateY(20px); }
+    .head:not(.-in) { display: none; }
+    .head h2 { font-size: clamp(20px, 6vw, 30px); }
+    #nav { display: none; }
+  }
+  @media (max-width: 860px) and (min-height: 1px) { .head { gap: 12px; } }
+  @media (prefers-reduced-motion: reduce) {
+    .col__media, .head, .col { transition-duration: .01ms; }
+  }
+
+/* Bollard palette and room for the component's action. */
+#top{display:none}.scene--approach{--s-bg:linear-gradient(145deg,#edf5f8,#bad4df)}.scene--tech{--s-bg:linear-gradient(145deg,#e4f1f5,#9ebecb)}.scene--story{--s-bg:linear-gradient(145deg,#f4eae6,#c58e7e)}.scene--craft{--s-bg:linear-gradient(145deg,#eff6f7,#b1cbd4)}
+@media(min-width:861px){#headline{height:clamp(180px,30vh,260px)}}
+</style>
+</head>
+<body>
+<section id="section">
+  <div id="strip" role="tablist" aria-label="Bollard chapters"></div>
+
+  <header id="top">
+    <div id="brand"><span id="brand-name">BOLLARD</span></div>
+    <nav id="nav" aria-label="Primary"></nav>
+  </header>
+
+  <div id="headline"></div>
+</section>
+
+<script type="module">
+/* ============================================================
+   CONFIG — art-direct everything here. Each column is one chapter;
+   its `art` picks one of the layered mesh-gradient panels (.scene--*).
+============================================================ */
+const CONFIG = {
+  brand: 'Bollard',
+  nav: [],
+  cta: 'Explore',
+  start: 0,                              // chapter shown on load
+  columns: [
+    { idx: '001', tag: 'For agents that touch money',  name: ['For', 'Builders'],   art: 'approach',
+      title: 'Put your agent<br>to the test' },
+    { idx: '002', tag: 'A versioned result',      name: ['For', 'Wallets'], art: 'tech',
+      title: 'Check before<br>you delegate' },
+    { idx: '003', tag: 'Challenge the system',       name: ['For', 'Researchers'],      art: 'story',
+      title: 'Find the cases<br>that matter' },
+    { idx: '004', tag: 'Understand the evidence',      name: ['The', 'Method'],      art: 'craft',
+      title: 'A rating with<br>defined limits' },
+  ],
+}
+
+/* ---------- build DOM ---------- */
+const strip = document.getElementById('strip')
+const headline = document.getElementById('headline')
+document.getElementById('brand-name').textContent = CONFIG.brand
+document.getElementById('nav').innerHTML = CONFIG.nav.map(n => `<a href="#">${n}</a>`).join('')
+
+const cols = CONFIG.columns.map((c, i) => {
+  const col = document.createElement('div')
+  col.className = 'col'; col.tabIndex = 0; col.setAttribute('role', 'tab'); col.setAttribute('aria-label', c.name.join(' '))
+  col.innerHTML = `
+    <div class="col__media"><div class="scene scene--${c.art}"></div></div>
+    <div class="col__cap"><b>${c.idx}</b><span>${c.tag}</span></div>
+    <h3 class="col__name">${c.name[0]}<span>${c.name[1]}</span></h3>`
+  strip.appendChild(col)
+
+  const head = document.createElement('div')
+  head.className = 'head'
+  head.innerHTML = `<h2>${c.title}</h2><a class="pill" href="${['dashboard.html#builders','dashboard.html#lookup','dashboard.html#families','details.html'][i]}" target="_parent">${CONFIG.cta} <span aria-hidden="true">→</span></a>`
+  headline.appendChild(head)
+
+  return { col, media: col.querySelector('.col__media'), head }
+})
+
+/* ---------- the "one in one" slide: exit-up / enter-from-below, with a silent reset ---------- */
+const CAN_HOVER = matchMedia('(hover: hover) and (pointer: fine)').matches
+let active = null
+
+// when a layer finishes sliding up and out, snap it back below (no transition) so it always re-enters upward
+function armReset(el) {
+  el.addEventListener('transitionend', (e) => {
+    if (e.propertyName !== 'transform' || !el.classList.contains('-out')) return
+    el.style.transition = 'none'; el.classList.remove('-out'); void el.offsetWidth; el.style.transition = ''
+  })
+}
+function enter(el) {
+  if (el.classList.contains('-out')) { el.style.transition = 'none'; el.classList.remove('-out'); void el.offsetWidth; el.style.transition = '' }
+  el.classList.add('-in')
+}
+function exit(el) { el.classList.remove('-in'); el.classList.add('-out') }
+cols.forEach(c => { armReset(c.media); armReset(c.head) })
+
+function setActive(i, focus) {
+  if (i === active) return
+  const prev = active
+  active = i
+  if (prev != null) { cols[prev].col.classList.remove('-active'); cols[prev].col.setAttribute('aria-selected', 'false'); exit(cols[prev].media); exit(cols[prev].head) }
+  const c = cols[i]
+  c.col.classList.add('-active'); c.col.setAttribute('aria-selected', 'true')
+  enter(c.media); enter(c.head)
+  if (focus) c.col.focus()
+}
+
+/* ---------- interaction: hover / tap / focus / arrow-keys ---------- */
+cols.forEach((c, i) => {
+  if (CAN_HOVER) c.col.addEventListener('pointerenter', () => setActive(i))
+  c.col.addEventListener('click', () => setActive(i))
+  c.col.addEventListener('focus', () => setActive(i))
+  c.col.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { setActive((i + 1) % cols.length, true); e.preventDefault() }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { setActive((i - 1 + cols.length) % cols.length, true); e.preventDefault() }
+  })
+})
+
+/* ---------- go (slide the first chapter in on load) ---------- */
+requestAnimationFrame(() => requestAnimationFrame(() => setActive(CONFIG.start)))
+</script>
+</body>
+</html>
+

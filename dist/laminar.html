@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gradient · Laminar</title>
+<style>
+  :root { color-scheme: dark }
+  html, body { margin: 0; height: 100%; background: #2aa8a6; overflow: hidden }
+  #gl { display: block; width: 100vw; height: 100vh }
+  #fade { position: fixed; inset: 0; background: #2aa8a6; pointer-events: none; opacity: 1; transition: opacity 1.1s ease }
+
+  /* ====== UI PANEL (copy-paste identical across gradients) ====== */
+  #ui-panel { position: fixed; top: 12px; right: 12px; width: 286px; max-height: calc(100vh - 24px); overflow: auto;
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #dde3ee; z-index: 10;
+    background: rgba(9, 11, 17, .78); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.10); border-radius: 12px; padding: 10px 12px 12px }
+  #ui-panel.closed > *:not(#ui-head) { display: none }
+  #ui-head { display: flex; align-items: center; justify-content: space-between; cursor: pointer; margin-bottom: 8px }
+  #ui-head b { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: 10px; opacity: .8 }
+  #ui-fps { opacity: .55; font-variant-numeric: tabular-nums }
+  .ui-sec { margin: 10px 0 4px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; opacity: .42 }
+  .ui-row { display: grid; grid-template-columns: 96px 1fr 42px; align-items: center; gap: 6px; margin: 3px 0 }
+  .ui-row label { opacity: .72; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .ui-row input[type=range] { width: 100%; accent-color: #7f9cff; height: 14px }
+  .ui-row input[type=color] { width: 100%; height: 18px; padding: 0; border: 0; background: none; border-radius: 4px }
+  .ui-row span { text-align: right; opacity: .55; font-variant-numeric: tabular-nums }
+  #ui-preset optgroup { background: #0b0d13; color: #9aa4b8; font-style: normal }
+  #ui-preset option { background: #0b0d13; color: #dde3ee }
+  #ui-preset { width: 100%; margin-bottom: 4px; background: rgba(255,255,255,.06); color: #dde3ee;
+    border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 4px 6px; font: inherit }
+  .ui-btns { display: flex; gap: 6px; margin-top: 10px }
+  .ui-btns button { flex: 1; cursor: pointer; background: rgba(255,255,255,.06); color: #dde3ee;
+    border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 5px 0; font: inherit }
+  .ui-btns button:hover { background: rgba(255,255,255,.12) }
+  #ui-rnd-all { width: 100%; margin-top: 6px; cursor: pointer; font: inherit; color: #dde3ee;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15); border-radius: 6px; padding: 6px 0 }
+  #ui-rnd-all:hover { background: rgba(255,255,255,.13) }
+  #ui-save { width: 100%; margin-top: 6px; cursor: pointer; font: inherit; color: #dde3ee;
+    background: rgba(127,156,255,.16); border: 1px solid rgba(127,156,255,.44); border-radius: 6px; padding: 6px 0 }
+  #ui-save:hover { background: rgba(127,156,255,.3) }
+  /* ---- the group: the rolls of this gradient that were worth keeping. They are written
+     into the JSON block below the panel, so the file carries its own variants. */
+  #ui-add-group { width: 100%; margin-top: 6px; cursor: pointer; font: inherit; color: #dde3ee;
+    background: rgba(255,255,255,.05); border: 1px dashed rgba(255,255,255,.24); border-radius: 6px; padding: 6px 0 }
+  #ui-add-group:hover { background: rgba(255,255,255,.12) }
+  .ui-grp { margin-top: 10px }
+  .ui-grp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px;
+    font-size: 9px; letter-spacing: .12em; text-transform: uppercase; opacity: .42 }
+  .ui-grp-head em { font-style: normal; letter-spacing: .04em; text-transform: none }
+  .ui-grp-list { display: flex; flex-wrap: wrap; gap: 4px }
+  .ui-grp-list:empty::after { content: 'no variants yet'; font-size: 10px; opacity: .34 }
+  .ui-var { width: 44px; height: 24px; padding: 0; cursor: pointer; font: inherit; font-size: 9px;
+    color: rgba(255,255,255,.9); text-shadow: 0 1px 2px rgba(0,0,0,.75); background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.16); border-radius: 5px }
+  .ui-var:hover { border-color: rgba(255,255,255,.55) }
+  /* the one whose values are the live ones — moving any slider puts it out */
+  .ui-var.on { border-color: rgba(127,156,255,.95); box-shadow: 0 0 0 1px rgba(127,156,255,.45) }
+  #ui-note { margin-top: 6px; min-height: 14px; font-size: 10px; line-height: 1.4; opacity: .62 }
+  #ui-snapshot { margin: 8px 0 0; padding: 8px; max-height: 168px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    background: rgba(0,0,0,.35); border-radius: 6px; font-size: 10px; line-height: 1.45; opacity: .72 }
+#ui-panel { display:none !important; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="fade"></div>
+
+<div id="ui-panel">
+  <div id="ui-head"><b>Laminar</b><span id="ui-fps">— fps</span></div>
+  <select id="ui-preset"></select>
+  <div id="ui-rows"></div>
+  <div class="ui-btns">
+    <button id="ui-reload">⟳ reload</button>
+    <button id="ui-reset">↺ reset</button>
+    <button id="ui-copy">⧉ copy</button>
+  </div>
+  <div class="ui-btns">
+    <button id="ui-rnd-color">&#8258; colour</button>
+    <button id="ui-rnd-pointer">&#8258; cursor</button>
+  </div>
+  <div class="ui-btns">
+    <button id="ui-rnd-motion">&#8258; motion</button>
+    <button id="ui-rnd-tone">&#8258; tone</button>
+  </div>
+  <button id="ui-rnd-all">&#8258; randomise everything</button>
+  <button id="ui-save">&#10515; save as default</button>
+  <div class="ui-grp">
+    <div class="ui-grp-head"><span>group <em id="ui-grp-n">0</em></span><em>click wear · alt drop</em></div>
+    <div id="ui-grp-list" class="ui-grp-list"></div>
+    <button id="ui-add-group">&#43; add this to the group</button>
+  </div>
+  <div id="ui-note"></div>
+  <pre id="ui-snapshot"></pre>
+</div>
+
+<!-- ====== GROUP ======
+     The variants of this gradient: every roll that was worth keeping, as the full
+     CONFIG it takes to wear it again. The panel's ＋ button adds one and the dev
+     server writes it back in here, so the file exports carrying its own group.
+     Hand-editable — name a variant whatever you like. -->
+<script type="application/json" id="ui-group">
+{ "slug": "08-laminar",
+  "variants": [
+    {"name":"Laminar#001","added":"2026-08-23","config":{"bgColor":"#e2f0e8","colorA":"#8fd8b0","colorB":"#f04b8b","colorC":"#3fc8c0","colorD":"#fff5f9","scale":0.31,"speed":0.33,"stream":0.85,"sway":0.22,"body":0.46,"core":0.63,"swirl":0.26,"drift":0.35,"spread":1.42,"weave":0.09,"fibre":42,"travel":8.5,"gloss":0.2,"sheen":0.05,"contrast":1,"midpoint":0.45,"bandAmount":0,"bandCount":5,"bandSoft":0.42,"glow":0.16,"grain":0,"dither":1.62,"vignette":0.025,"pointerRadius":0.6,"pointerStrength":0.16,"pointerDrag":0.18,"parallax":0.001,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#002","added":"2026-08-23","config":{"bgColor":"#2aa8a6","colorA":"#3fc8c0","colorB":"#f04b8b","colorC":"#8fd8b0","colorD":"#fdf0f5","scale":0.68,"speed":0.33,"stream":1.18,"sway":0.4,"body":0.7,"core":0.42,"swirl":0.48,"drift":0.58,"spread":2.45,"weave":0.125,"fibre":58,"travel":13.5,"gloss":0.38,"sheen":0.1,"contrast":1.2,"midpoint":0.52,"bandAmount":0,"bandCount":6,"bandSoft":0.48,"glow":0.32,"grain":0,"dither":1.38,"vignette":0.07,"pointerRadius":0.44,"pointerStrength":0.3,"pointerDrag":0.32,"parallax":0.0021,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#003","added":"2026-08-23","config":{"bgColor":"#5e2eb0","colorA":"#7b3fd9","colorB":"#f02be0","colorC":"#d585f0","colorD":"#fff2fc","scale":0.62,"speed":0.33,"stream":1.15,"sway":0.38,"body":0.66,"core":0.44,"swirl":0.42,"drift":0.55,"spread":2.2,"weave":0.115,"fibre":54,"travel":12,"gloss":0.34,"sheen":0.09,"contrast":1.16,"midpoint":0.5,"bandAmount":0,"bandCount":6,"bandSoft":0.4,"glow":0.3,"grain":0,"dither":1.4,"vignette":0.06,"pointerRadius":0.46,"pointerStrength":0.28,"pointerDrag":0.3,"parallax":0.0017,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#004","added":"2026-08-23","config":{"bgColor":"#c22a22","colorA":"#e8342b","colorB":"#ff5a4b","colorC":"#ffd8d0","colorD":"#fffaf8","scale":0.84,"speed":0.33,"stream":1.32,"sway":0.46,"body":0.82,"core":0.36,"swirl":0.58,"drift":0.66,"spread":3.1,"weave":0.155,"fibre":74,"travel":17,"gloss":0.46,"sheen":0.13,"contrast":1.28,"midpoint":0.56,"bandAmount":0,"bandCount":7,"bandSoft":0.52,"glow":0.42,"grain":0,"dither":1.32,"vignette":0.1,"pointerRadius":0.36,"pointerStrength":0.34,"pointerDrag":0.4,"parallax":0.0027,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#005","added":"2026-08-23","config":{"bgColor":"#ffdcd4","colorA":"#f5544a","colorB":"#e8342b","colorC":"#ff9b8c","colorD":"#fffdfc","scale":0.46,"speed":0.33,"stream":0.96,"sway":0.28,"body":0.54,"core":0.55,"swirl":0.34,"drift":0.44,"spread":1.75,"weave":0.12,"fibre":58,"travel":11.5,"gloss":0.28,"sheen":0.07,"contrast":1.1,"midpoint":0.48,"bandAmount":0,"bandCount":6,"bandSoft":0.44,"glow":0.22,"grain":0,"dither":1.52,"vignette":0.04,"pointerRadius":0.5,"pointerStrength":0.24,"pointerDrag":0.26,"parallax":0.0015,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#006","added":"2026-08-23","config":{"bgColor":"#fde8cf","colorA":"#ff6a2e","colorB":"#ffa02b","colorC":"#f7d76a","colorD":"#fffdf5","scale":0.28,"speed":0.33,"stream":0.8,"sway":0.2,"body":0.44,"core":0.66,"swirl":0.24,"drift":0.32,"spread":1.3,"weave":0.08,"fibre":38,"travel":7.5,"gloss":0.22,"sheen":0.05,"contrast":1.02,"midpoint":0.44,"bandAmount":0,"bandCount":5,"bandSoft":0.4,"glow":0.15,"grain":0,"dither":1.6,"vignette":0.02,"pointerRadius":0.58,"pointerStrength":0.18,"pointerDrag":0.2,"parallax":0.001,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#007","added":"2026-08-23","config":{"bgColor":"#c9281f","colorA":"#ff4d2e","colorB":"#ffa02b","colorC":"#f5c842","colorD":"#fffaee","scale":0.76,"speed":0.33,"stream":1.28,"sway":0.44,"body":0.78,"core":0.38,"swirl":0.55,"drift":0.62,"spread":2.8,"weave":0.14,"fibre":66,"travel":15,"gloss":0.42,"sheen":0.12,"contrast":1.24,"midpoint":0.54,"bandAmount":0,"bandCount":7,"bandSoft":0.5,"glow":0.38,"grain":0,"dither":1.35,"vignette":0.09,"pointerRadius":0.4,"pointerStrength":0.32,"pointerDrag":0.36,"parallax":0.0023,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#008","added":"2026-08-23","config":{"bgColor":"#dce8ff","colorA":"#7f9dff","colorB":"#ff8a72","colorC":"#e8d0d8","colorD":"#fffdfb","scale":0.4,"speed":0.33,"stream":0.88,"sway":0.26,"body":0.5,"core":0.6,"swirl":0.28,"drift":0.4,"spread":1.6,"weave":0.11,"fibre":52,"travel":10,"gloss":0.24,"sheen":0.06,"contrast":1.06,"midpoint":0.47,"bandAmount":0,"bandCount":5,"bandSoft":0.46,"glow":0.2,"grain":0,"dither":1.58,"vignette":0.03,"pointerRadius":0.55,"pointerStrength":0.2,"pointerDrag":0.22,"parallax":0.0013,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#009","added":"2026-08-23","config":{"bgColor":"#efdcfa","colorA":"#8b4fe0","colorB":"#f02be0","colorC":"#e0a0f2","colorD":"#fff4fe","scale":0.34,"speed":0.33,"stream":0.92,"sway":0.24,"body":0.52,"core":0.58,"swirl":0.3,"drift":0.38,"spread":1.55,"weave":0.1,"fibre":46,"travel":9,"gloss":0.26,"sheen":0.06,"contrast":1.05,"midpoint":0.46,"bandAmount":0,"bandCount":5,"bandSoft":0.45,"glow":0.18,"grain":0,"dither":1.55,"vignette":0.03,"pointerRadius":0.52,"pointerStrength":0.22,"pointerDrag":0.24,"parallax":0.0013,"maxDpr":1,"grainAnim":0,"cursor":1}},
+    {"name":"Laminar#010","added":"2026-08-23","config":{"bgColor":"#2aa8a6","colorA":"#3fc8c0","colorB":"#f04b8b","colorC":"#8fd8b0","colorD":"#fdf0f5","scale":0.68,"speed":0.33,"stream":1.18,"sway":0.4,"body":0.7,"core":0.42,"swirl":0.48,"drift":0.58,"spread":2.45,"weave":0.125,"fibre":58,"travel":13.5,"gloss":0.38,"sheen":0.1,"contrast":1.2,"midpoint":0.52,"bandAmount":0,"bandCount":6,"bandSoft":0.48,"glow":0.32,"grain":0,"dither":1.38,"vignette":0.07,"pointerRadius":0.44,"pointerStrength":0.3,"pointerDrag":0.32,"parallax":0.0021,"maxDpr":1,"grainAnim":0,"cursor":1}}
+  ]
+}
+</script>
+
+<script>
+/* ====== CONFIG ====== */
+const CONFIG = {
+  bgColor:  '#d6e7ef',
+  colorA:   '#9ebdca',
+  colorB:   '#bc624c',
+  colorC:   '#e5f0f3',
+  colorD:   '#fff6ed',
+
+  scale:            0.55,
+  speed:            0.33,      // slow. see Architecture/Slow and Slick
+  stream:           1.05,      // strength of the uniform stream the whole frame drifts in
+  sway:             0.34,      // how far the stream heading swings, in radians
+  body:             0.6,      // doublet strength — how much each hidden body displaces the flow
+  core:             0.46,      // body radius; also what softens the pole away
+  swirl:            0.38,      // how fast each body's doublet axis turns
+  drift:            0.5,      // radius of each body's slow orbit
+
+  spread:           2.05,      // how hard the stream function is compressed into the ramp
+  weave:            0.105,      // amplitude of the streamline fibres
+  fibre:            48,      // fibre frequency, in stream-function units
+  travel:           11,     // equipotential frequency — the bands that move downstream
+  gloss:            0.32,      // how much flow speed lifts (and stagnation drops) the tone
+  sheen:            0.085,      // amplitude of the travelling sheen
+
+  contrast:         1.14,
+  midpoint:         0.5,
+
+  bandAmount:       0.00,
+  bandCount:        6,
+  bandSoft:         0.42,
+
+  glow:             0.26,
+  grain:            0,        // off by default — house grain, turn it up to taste
+  grainAnim:        0,        // 0 static · 1 re-seeds the grain like film
+  dither:           1.45,
+  vignette:         0.055,
+  cursor:           1,        // 1 follows the hand · 0 ignores it (fully ambient)
+
+  pointerRadius:    0.48,
+  pointerStrength:  0.26,      // 0.5 makes the cursor exactly a cylinder in the stream
+  pointerDrag:      0.28,      // the cursor's own velocity becomes doublet strength — it drags fluid
+  parallax:         0.0018,
+
+  maxDpr:           1.0       // 1× by default. raise it only if the look demands it
+}
+
+/* ====== COLOR PRESETS — 20 per gradient, grouped. Colours only, never effect knobs. ====== */
+/* The stream function lands most of the frame in the C→D half of the ramp, so on THIS field
+   colorC is what sets a preset's key — not colorA, which only survives in the thin dark
+   lanes, and not bgColor, which the shader only shows under f<0.14. A set is therefore built
+   downward from C: C is the colour you will actually see, B the deeper mass under it, A/bg
+   the lanes, D the crest. Ladder the lightness A<B<C<D or the sheets flatten. */
+const PRESETS = {
+  cool: {
+    'Cobalt Coral':    { bgColor: '#2445d6', colorA: '#2b5bff', colorB: '#ff6b5a', colorC: '#dce8ff', colorD: '#fffaf6' },
+    'Lagoon Poppy':    { bgColor: '#041f28', colorA: '#0a3a44', colorB: '#7a2a10', colorC: '#46cfe0', colorD: '#f2fcff' },
+    'Ultramarine Ice': { bgColor: '#050a30', colorA: '#0e1866', colorB: '#2b3fc8', colorC: '#78d8f0', colorD: '#f2fbff' },
+    'Verdigris Tide':  { bgColor: '#02211c', colorA: '#063a30', colorB: '#0d5f8a', colorC: '#5fd8b0', colorD: '#fff2e8' }
+  },
+  dark: {
+    'Midnight Ember':  { bgColor: '#03040e', colorA: '#0a1338', colorB: '#23307d', colorC: '#e0663f', colorD: '#ffe3c4' },
+    'Abyss Amber':     { bgColor: '#01100e', colorA: '#052824', colorB: '#0a4a44', colorC: '#e08a3a', colorD: '#fff0d8' },
+    'Void Violet':     { bgColor: '#06041a', colorA: '#130c38', colorB: '#3a1a8f', colorC: '#a45cf0', colorD: '#b8f2ea' },
+    'Obsidian Rose':   { bgColor: '#0a0410', colorA: '#22082a', colorB: '#5e1a5e', colorC: '#f0567a', colorD: '#ffe0d8' }
+  },
+  warm: {
+    'Solar Laminar':   { bgColor: '#120402', colorA: '#3d0d04', colorB: '#8f2a0a', colorC: '#f5892a', colorD: '#ffe6b4' },
+    'Rosewood Silk':   { bgColor: '#14040a', colorA: '#3d0c1e', colorB: '#7a1836', colorC: '#e05a6a', colorD: '#ffd8cf' },
+    'Molten Brass':    { bgColor: '#100a02', colorA: '#2e1e06', colorB: '#7a520c', colorC: '#e8b83c', colorD: '#fff0c4' },
+    'Magenta Flare':   { bgColor: '#16041a', colorA: '#380a38', colorB: '#6b1470', colorC: '#f04ac0', colorD: '#ffd8f2' }
+  },
+  muted: {
+    'Sage Clay':       { bgColor: '#2c3325', colorA: '#414d36', colorB: '#6b7a55', colorC: '#a8b88a', colorD: '#f2f4e2' },
+    'Dune Dusk':       { bgColor: '#33251a', colorA: '#4d3826', colorB: '#7d5f40', colorC: '#c19a70', colorD: '#f9ecd8' },
+    'Ash Rose':        { bgColor: '#2e2024', colorA: '#452f36', colorB: '#6e4c56', colorC: '#b0808c', colorD: '#f9e6e8' },
+    'Slate Plum':      { bgColor: '#241d3a', colorA: '#372c56', colorB: '#5b4a8f', colorC: '#9f8fd0', colorD: '#f2ecff' }
+  },
+  light: {
+    'Porcelain Cobalt':{ bgColor: '#c6d6f5', colorA: '#8fa8ea', colorB: '#ff8f72', colorC: '#ffd0c0', colorD: '#fffaf6' },
+    'Peach Paper':     { bgColor: '#f7d4a8', colorA: '#f2a860', colorB: '#ff8a3d', colorC: '#ffcf8a', colorD: '#fffaee' },
+    'Mint Sherbet':    { bgColor: '#b8e8d2', colorA: '#6fd4b0', colorB: '#3fb8c8', colorC: '#ffd76a', colorD: '#fffdf2' },
+    'Lilac Wash':      { bgColor: '#ddc8f5', colorA: '#b78ff0', colorB: '#f56ad0', colorC: '#f0b8e6', colorD: '#fff2fc' }
+  }
+}
+
+
+/* ====== DEFAULTS + PERSISTENCE (loaded BEFORE anything is built) ====== */
+const DEFAULTS = JSON.parse(JSON.stringify(CONFIG))
+const STORAGE_KEY = 'getlayers:08-laminar'
+/* Opened on its own, this file remembers what you rolled: ⟳ reload comes back to it and
+   ↺ reset throws it away. Embedded in the gallery it must NOT — there the file is what is
+   being looked at, and a look remembered in this browser would beat the file itself: the
+   card's still would be the saved defaults while its live preview showed something else
+   entirely. Only ⤓ preview changes what this gradient is, and it changes the file. */
+const OWN_WINDOW = window.parent === window
+try { const s = OWN_WINDOW && JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); if (s) for (const k in s) if (k in CONFIG) CONFIG[k] = s[k] } catch (e) {}
+function saveConfig() { if (!OWN_WINDOW) return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIG)) } catch (e) {} }
+
+function hexToVec3(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
+}
+
+/* ====== GL BOILERPLATE (frozen chrome — do not edit per gradient) ====== */
+const canvas = document.getElementById('gl')
+const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' })
+if (!gl) {
+  document.getElementById('fade').style.opacity = 0
+  document.getElementById('ui-panel').style.display = 'none'
+  document.body.insertAdjacentHTML('beforeend', '<p style="position:fixed;inset:0;display:grid;place-items:center;color:#889;font:13px system-ui">WebGL2 is not available in this browser.</p>')
+  throw new Error('no webgl2')
+}
+
+const VERT = `#version 300 es
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`
+
+/* ====== THE SHADER — ⭐ the only part that changes between gradients ====== */
+/* Potential flow, solved in closed form.
+
+   The frame is one complex-analytic function of the plane:
+
+       w(z) = S·z  +  Σ  mu_k / (z − a_k)
+
+   a uniform stream plus a handful of drifting doublets (hidden bodies the
+   fluid has to get around). Because w is analytic, its real part is the
+   velocity potential and its imaginary part is the stream function, and
+   conj(w'(z)) is the velocity — all three fall out of the same ~20 ops per
+   body. Nothing is integrated, marched or noised: the flow is exact
+   everywhere, at every zoom, for every frame, which is why it has no texture
+   to alias and no boundary anywhere to find.
+
+   What is drawn from it:
+     psi (Im w)  the stream function → the composition. Its level sets ARE the
+                 streamlines, so soft stripes in psi are fibres lying along the
+                 flow, and they crowd exactly where the flow crowds.
+     phi (Re w)  the velocity potential → level sets run across the flow, and
+                 sliding their phase with iTime walks them downstream. This is
+                 the only term that has to move for the whole frame to flow.
+     |w'|        speed → lifts the tone where the flow squeezes between bodies
+                 and drops it in the stagnant pockets in front of and behind
+                 them. Free lighting, and it is the fluid's own lighting.
+
+   The pointer is a body in the same sum: a softened cylinder of radius
+   uPointerRadius whose doublet strength is its own velocity, which is
+   physically what a cylinder moving through still fluid is. So the stream
+   parts around the cursor, and dragging it drags fluid with it. */
+const FRAG = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2  iResolution;
+uniform float iTime;
+uniform vec2  iMouse;          // aspect-corrected units, same space as uv
+uniform vec2  iMouseVel;       // its spring velocity, per frame, same units
+
+uniform vec3  uBg, uColorA, uColorB, uColorC, uColorD;
+uniform float uScale, uSpeed, uStream, uSway, uBody, uCore, uSwirl, uDrift;
+uniform float uSpread, uWeave, uFibre, uTravel, uGloss, uSheen;
+uniform float uContrast, uMidpoint, uBandAmount, uBandCount, uBandSoft;
+uniform float uGlow, uGrain, uDither, uVignette;
+uniform float uPointerRadius, uPointerStrength, uPointerDrag, uParallax;
+
+#define BODIES 5
+#define TAU 6.2831853
+
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+
+// softened 1/z — conj(z) / (|z|^2 + r^2). C-infinity, no pole, and r is a real body radius
+vec2 csoftinv(vec2 z, float r2) { return vec2(z.x, -z.y) / (dot(z, z) + r2); }
+
+vec3 ramp4(float t) {
+  vec3 c = mix(uColorA, uColorB, smoothstep(0.00, 0.42, t));
+  c = mix(c, uColorC, smoothstep(0.26, 0.74, t));
+  c = mix(c, uColorD, smoothstep(0.60, 1.00, t));
+  return c;
+}
+
+// triangular-PDF dither — the only reliable cure for 8-bit gradient banding
+float triDither(vec2 fc) {
+  float a = fract(sin(dot(fc, vec2(12.9898, 78.233))) * 43758.5453);
+  float b = fract(sin(dot(fc + 17.0, vec2(12.9898, 78.233))) * 43758.5453);
+  return (a + b - 1.0) / 255.0;
+}
+
+// ---- house grain. ONE look across the collection: an integer hash (no sin() streaks),
+// triangular so it reads as film rather than static, weighted into the midtones so it
+// never crusts a black or a white. Static by default; uGrainAnim re-seeds it 24×/s.
+uniform float uGrainAnim;
+float houseGrain(vec2 fc) {
+  uvec2 q = uvec2(fc) * uvec2(1597334677u, 3812015801u)
+          + uint(floor(iTime * 24.0 * uGrainAnim)) * 2654435769u;
+  uint n = q.x ^ q.y; n = n * 1664525u + 1013904223u; n ^= n >> 16u; n *= 2246822519u; n ^= n >> 13u;
+  float a = float(n & 0xffffu) / 65535.0;
+  n *= 3266489917u; n ^= n >> 16u;
+  float b = float(n & 0xffffu) / 65535.0;
+  return a + b - 1.0;
+}
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution) / iResolution.y;
+  float t = iTime * uSpeed;
+
+  vec2 z = (uv - iMouse * uParallax) * uScale;
+
+  // the uniform stream, its heading swinging on two incommensurable rates so it never repeats
+  float sa = uSway * (sin(t * 0.41) * 0.6 + sin(t * 0.23 + 1.7) * 0.4);
+  vec2 S = uStream * vec2(cos(sa), sin(sa));
+
+  vec2 Ws = cmul(S, z);       // the stream's own potential, kept apart — see the tone block below
+  vec2 Wb = vec2(0.0);        // everything the bodies add
+  vec2 dW = S;                // the derivative       conj(dW) is the velocity
+
+  float r2 = max(1e-4, uCore * uCore);
+  for (int i = 0; i < BODIES; i++) {
+    float fi = float(i);
+    float ph = fi * 2.3999632;                                   // golden angle — constant, folds at compile time
+    vec2  a  = vec2(cos(ph) * 1.42, sin(ph * 1.7) * 0.80)
+             + uDrift * vec2(sin(t * (0.61 + 0.09 * fi) + ph), cos(t * (0.47 + 0.07 * fi) + ph * 1.3));
+    float an = ph * 2.1 + t * uSwirl * (0.55 + 0.42 * fi);        // the doublet axis turns, so the oval tumbles;
+    vec2  mu = uBody * (0.70 + 0.34 * sin(ph * 3.1)) * vec2(cos(an), sin(an));   // rates spread so they never all agree
+    vec2  iv = csoftinv(z - a, r2);
+    Wb += cmul(mu, iv);
+    dW -= cmul(mu, cmul(iv, iv));                                // d/dz (mu/z) = -mu/z^2, softened the same way
+  }
+
+  // the cursor, as one more body: strength = uPointerStrength in the stream (0.5 is exactly a
+  // cylinder of radius uPointerRadius) plus its own velocity, which is what makes it drag fluid
+  float pr2 = max(1e-4, uPointerRadius * uPointerRadius);
+  vec2 mv = iMouseVel * (uPointerDrag * 32.0);
+  mv *= inversesqrt(1.0 + dot(mv, mv));                          // a flick saturates instead of taking the frame over
+  vec2 pmu = pr2 * (S * uPointerStrength * 2.0 + mv);
+  vec2 piv = csoftinv(z - iMouse * (1.0 - uParallax) * uScale, pr2);
+  Wb += cmul(pmu, piv);
+  dW -= cmul(pmu, cmul(piv, piv));
+
+  vec2 W = Ws + Wb;
+  float phi = W.x, psi = W.y;
+
+  // fibres: soft stripes in the stream function, i.e. lying along the streamlines.
+  // fwidth fades each harmonic out once it is finer than a pixel — an analytic mip, 4 ops
+  float ps = psi * uFibre;
+  float wf = fwidth(ps); wf *= wf;
+  float fib = (sin(ps) / (1.0 + 6.0 * wf) + 0.35 * sin(ps * 2.0 + 0.9) / (1.0 + 24.0 * wf)) * 0.74;
+
+  // equipotentials, walked downstream by time — the motion of the whole frame lives in this line
+  float pt = phi * uTravel - iTime * uSpeed * TAU * 1.5;
+  float wt = fwidth(pt); wt *= wt;
+  float sheen = sin(pt) / (1.0 + 2.0 * wt);
+
+  // speed, relative to the free stream: positive where the flow squeezes, negative in the stagnant pockets
+  float sp = length(dW) / max(1e-3, uStream) - 1.0;
+  float gloss = sp / (1.0 + abs(sp));
+
+  // Tone. The exposure comes almost entirely from the stream's own ramp, soft-saturated: it is
+  // bounded and it is the same every frame. A doublet's far lobe reaches the whole window, so
+  // giving the bodies' stream function much weight here lets five of them phase-align and drift
+  // the frame to white over a minute — they get 20 % and are separately saturated. Their real
+  // tonal presence is uGloss below, which is a difference from the free stream and so has no DC
+  // to drift at all, and the fibres, which bend around them without changing the mean.
+  float bs = (Ws.y * uSpread) * 1.30;
+  float bb = (Wb.y * uSpread);
+  float base = 0.5 + 0.5 * (0.80 * bs * inversesqrt(1.0 + bs * bs)
+                          + 0.20 * bb * inversesqrt(1.0 + bb * bb));
+
+  float f = base
+          + uWeave * fib
+          + uGloss * gloss
+          + uSheen * sheen * smoothstep(-0.25, 0.55, gloss);
+  f = clamp((f - uMidpoint) * uContrast + 0.5, 0.0, 1.0);
+
+  // optional posterise into soft bands
+  float steps = max(1.0, floor(uBandCount));
+  float fs = f * steps;
+  float banded = (floor(fs) + smoothstep(0.5 - uBandSoft * 0.5, 0.5 + uBandSoft * 0.5, fract(fs))) / steps;
+  f = mix(f, banded, uBandAmount);
+
+  vec3 col = ramp4(f);
+  col += (uColorD - uColorC) * uGlow * pow(f, 4.0);               // tint the lit end rather than gaining white
+  col = mix(uBg, col, smoothstep(0.0, 0.14, f) * 0.90 + 0.10);
+
+  col *= 1.0 - uVignette * dot(uv, uv);
+  { float hgL = clamp(dot(col, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+    col += houseGrain(gl_FragCoord.xy) * uGrain * mix(1.0, 4.0 * hgL * (1.0 - hgL), 0.6); }
+  col += triDither(gl_FragCoord.xy) * uDither;
+
+  fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`
+
+function compile(type, src) {
+  const sh = gl.createShader(type)
+  gl.shaderSource(sh, src)
+  gl.compileShader(sh)
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh))
+  return sh
+}
+
+const program = gl.createProgram()
+gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT))
+gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG))
+gl.linkProgram(program)
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program))
+gl.useProgram(program)
+gl.bindVertexArray(gl.createVertexArray())
+
+const LOC = {}
+const loc = n => (n in LOC ? LOC[n] : (LOC[n] = gl.getUniformLocation(program, n)))
+const u1f = (n, v) => gl.uniform1f(loc(n), v)
+const u2f = (n, x, y) => gl.uniform2f(loc(n), x, y)
+const u3c = (n, hex) => { const c = hexToVec3(hex); gl.uniform3f(loc(n), c[0], c[1], c[2]) }
+
+/* ====== CONFIG → UNIFORMS ====== */
+function applyConfig() {
+  gl.useProgram(program)
+  u3c('uBg', CONFIG.bgColor)
+  u3c('uColorA', CONFIG.colorA)
+  u3c('uColorB', CONFIG.colorB)
+  u3c('uColorC', CONFIG.colorC)
+  u3c('uColorD', CONFIG.colorD)
+  u1f('uScale', CONFIG.scale)
+  u1f('uSpeed', CONFIG.speed)
+  u1f('uStream', CONFIG.stream)
+  u1f('uSway', CONFIG.sway)
+  u1f('uBody', CONFIG.body)
+  u1f('uCore', CONFIG.core)
+  u1f('uSwirl', CONFIG.swirl)
+  u1f('uDrift', CONFIG.drift)
+  u1f('uSpread', CONFIG.spread)
+  u1f('uWeave', CONFIG.weave)
+  u1f('uFibre', CONFIG.fibre)
+  u1f('uTravel', CONFIG.travel)
+  u1f('uGloss', CONFIG.gloss)
+  u1f('uSheen', CONFIG.sheen)
+  u1f('uContrast', CONFIG.contrast)
+  u1f('uMidpoint', CONFIG.midpoint)
+  u1f('uBandAmount', CONFIG.bandAmount)
+  u1f('uBandCount', CONFIG.bandCount)
+  u1f('uBandSoft', CONFIG.bandSoft)
+  u1f('uGlow', CONFIG.glow)
+  u1f('uGrain', CONFIG.grain)
+  u1f('uGrainAnim', CONFIG.grainAnim)
+  u1f('uDither', CONFIG.dither)
+  u1f('uVignette', CONFIG.vignette)
+  u1f('uPointerRadius', CONFIG.pointerRadius)
+  u1f('uPointerStrength', CONFIG.pointerStrength)
+  u1f('uPointerDrag', CONFIG.pointerDrag)
+  u1f('uParallax', CONFIG.parallax)
+  resize()
+}
+
+/* ====== RESIZE ====== */
+let dpr = 1
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDpr)
+  const w = Math.max(1, Math.round(innerWidth * dpr))
+  const h = Math.max(1, Math.round(innerHeight * dpr))
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
+  gl.viewport(0, 0, w, h)
+  gl.useProgram(program)
+  u2f('iResolution', w, h)
+}
+/* Coalesced to one resize per frame. A window drag or a phone rotation fires resize far
+   faster than the display refreshes, and every raw call reallocates the drawing buffer and
+   re-uploads iResolution — that burst is the hitch you feel while dragging an edge. */
+let resizeQueued = false
+addEventListener('resize', () => {
+  if (resizeQueued) return
+  resizeQueued = true
+  requestAnimationFrame(() => { resizeQueued = false; resize() })
+}, { passive: true })
+
+/* ====== POINTER (four scalars — the only per-frame CPU maths allowed) ======
+   A spring rather than the template's exponential lerp. Same O(1) smoothing the
+   GPU-Only Rule sanctions, but it carries a velocity — and here that velocity is
+   not just feel, it is physics: it is uploaded as iMouseVel and becomes the
+   doublet strength of the cursor's body, so the fluid keeps moving after the
+   cursor stops. Tuned just under critical (ζ ≈ 0.72) so it eases past and back. */
+const SPRING = 0.014, DAMP = 0.17
+const mouse = { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 }
+/* One handler for both events, and it does exactly one job: write the target. Everything
+   that moves is integrated in the render loop, so a flick that fires forty events inside a
+   single frame costs the same as one that fires one — and a touch now aims on contact
+   instead of staying dead until the first drag. */
+const aim = e => {
+  const a = innerWidth / innerHeight
+  mouse.tx = (e.clientX / innerWidth - 0.5) * a
+  mouse.ty = (0.5 - e.clientY / innerHeight)
+}
+addEventListener('pointermove', aim, { passive: true })
+addEventListener('pointerdown', aim, { passive: true })
+
+/* ====== RENDER LOOP ====== */
+/* The loop does exactly four things: step the pointer followers by elapsed time, upload three uniforms,
+   draw one triangle, tick the fps readout. Everything else is the shader's job. */
+const fadeEl = document.getElementById('fade')
+const fpsEl = document.getElementById('ui-fps')
+
+let visible = true
+new IntersectionObserver(es => { visible = es[0].isIntersecting }, { threshold: 0 }).observe(canvas)
+
+const t0 = performance.now()
+let prevT = t0, clock = 0, fpsT = t0, fpsN = 0
+function frame(now) {
+  requestAnimationFrame(frame)
+
+  /* PACING — one clamped clock drives everything below it.
+     `ms` is the real frame interval pinned to [4.17, 50] and `s` is that interval measured
+     in 60 Hz frames, so every ease and every spring in this loop advances by elapsed TIME
+     rather than by frame count — the same follow-lag on a 60, 120 or 144 Hz panel instead
+     of a chase that doubles in speed when the monitor does. The upper clamp on `s` is what
+     stops a dropped frame or a GC pause from flinging the chain across the screen in one
+     step, and it sits low enough that no damping term can ever overshoot into a wobble.
+     The shader clock is accumulated from the SAME clamped interval instead of read off the
+     wall clock — rAF stops in a background tab but wall time does not, and handing the
+     shader that gap is exactly what makes a field lurch on the way back. Clamped, an
+     alt-tab costs a pause and never a jump. */
+  const raw = now - prevT
+  prevT = now
+  if (!visible || document.hidden) return
+  const ms = raw > 50 ? 50 : raw < 4.167 ? 4.167 : raw
+  const s = ms > 36.7 ? 2.2 : ms * 0.06
+  clock += ms * 0.001
+
+  /* Stepped by elapsed time rather than once per frame. A per-frame step ties the follow-lag
+     to the refresh rate — trailing at 60 Hz, near enough attached to the cursor at 144 — and
+     lets a single long frame after a stall launch the spring. */
+  mouse.vx += ((mouse.tx - mouse.x) * SPRING - mouse.vx * DAMP) * s   // slow follow — the pointer is felt, not tracked
+  mouse.vy += ((mouse.ty - mouse.y) * SPRING - mouse.vy * DAMP) * s
+  mouse.x += mouse.vx * s
+  mouse.y += mouse.vy * s
+
+  u1f('iTime', clock)
+  /* cursor 0: the hand is ignored and the pointer eases back to where it rested — the
+     gradient goes fully ambient. Nothing else changes, so it can be flipped live. */
+  if (mouse.rest === undefined) mouse.rest = { x: mouse.tx, y: mouse.ty }
+  if (!CONFIG.cursor) { mouse.tx = mouse.rest.x; mouse.ty = mouse.rest.y }
+
+  u2f('iMouse', mouse.x, mouse.y)
+  u2f('iMouseVel', mouse.vx, mouse.vy)
+  gl.drawArrays(gl.TRIANGLES, 0, 3)
+
+  fpsN++
+  if (now - fpsT > 500) {
+    fpsEl.textContent = Math.round(fpsN * 1000 / (now - fpsT)) + ' fps · ' + dpr.toFixed(1) + '×'
+    fpsT = now; fpsN = 0
+  }
+}
+
+applyConfig()
+gl.drawArrays(gl.TRIANGLES, 0, 3)        // one draw before the reveal, so we never fade onto a blank canvas
+fadeEl.style.opacity = 0
+requestAnimationFrame(frame)
+
+/* Editing controls omitted from the production background. */
+</script>
+</body>
+</html>
+

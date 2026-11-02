@@ -1,0 +1,179 @@
+/*
+ * Hover Tabs.
+ *
+ * The active tab is the same colour as the picture frame and butts against
+ * it; two pseudo-element fillets (a square with a quarter circle punched
+ * out) round the inside corners where they meet, so tab and frame read as a
+ * single surface. The description opens with the grid-rows 0fr → 1fr trick,
+ * which animates to the text's real height without measuring it.
+ */
+
+.ht {
+  width: 100%;
+  container-type: inline-size;
+  background: var(--ht-bg);
+}
+
+.ht__grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--ht-tabs) 1fr;
+  width: 100%;
+  aspect-ratio: var(--ht-aspect);
+}
+
+.ht__tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: var(--ht-top);
+  min-width: 0;
+}
+
+.ht__tab {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 0fr;
+  padding: 18px 14px 18px 22px;
+  border: 0;
+  border-radius: var(--ht-tab-radius) 0 0 var(--ht-tab-radius);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--ht-title);
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color var(--ht-speed) ease,
+    grid-template-rows var(--ht-speed) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ht__tab.is-active {
+  grid-template-rows: auto 1fr;
+  background: var(--ht-surface);
+}
+
+/* The two fillets, above and below the tab's right end. */
+.ht__tab::before,
+.ht__tab::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  width: var(--ht-tab-radius);
+  height: var(--ht-tab-radius);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ht-speed) ease;
+}
+
+.ht__tab::before {
+  bottom: 100%;
+  background: radial-gradient(circle at 0 0, transparent calc(var(--ht-tab-radius) - 0.5px), var(--ht-surface) var(--ht-tab-radius));
+}
+
+.ht__tab::after {
+  top: 100%;
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--ht-tab-radius) - 0.5px), var(--ht-surface) var(--ht-tab-radius));
+}
+
+.ht__tab.is-active::before,
+.ht__tab.is-active::after {
+  opacity: 1;
+}
+
+.ht__tab:focus-visible .ht__title {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ht__title {
+  font-size: clamp(16px, 1.75vw, 24px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.ht__more {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ht__text {
+  display: block;
+  padding-top: 8px;
+  max-width: 22em;
+  font-size: clamp(12px, 1.05vw, 14px);
+  line-height: 1.5;
+  color: var(--ht-text);
+  opacity: 0;
+  translate: 0 -4px;
+  transition: opacity var(--ht-speed) ease, translate var(--ht-speed) ease;
+}
+
+.ht__tab.is-active .ht__text {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.ht__panel {
+  min-width: 0;
+  padding: var(--ht-frame);
+  border-radius: var(--ht-radius);
+  background: var(--ht-surface);
+}
+
+.ht__pictures {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: calc(var(--ht-radius) - var(--ht-frame));
+}
+
+.ht__pictures img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  scale: 1.04;
+  transition:
+    opacity var(--ht-speed) ease,
+    scale calc(var(--ht-speed) * 2) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ht__pictures img.is-active {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Narrow: tabs stack above the picture and the fillets step aside. */
+@container (max-width: 640px) {
+  .ht__grid {
+    grid-template-columns: 1fr;
+    aspect-ratio: auto;
+  }
+  .ht__tabs {
+    padding-top: 0;
+  }
+  .ht__tab {
+    border-radius: var(--ht-tab-radius);
+  }
+  .ht__tab::before,
+  .ht__tab::after {
+    display: none;
+  }
+  .ht__panel {
+    aspect-ratio: 1.5;
+    margin-top: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ht__tab,
+  .ht__text,
+  .ht__pictures img {
+    transition-duration: 0s;
+  }
+}
+

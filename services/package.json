@@ -1,0 +1,27 @@
+{
+  "name": "@bollard/services",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "corpus:root": "bun scripts/corpus-root.ts",
+    "holdout:build": "bun scripts/holdout.ts",
+    "banned-words": "bun ../tools/banned-words.ts",
+    "harness:demo": "bun scripts/harness-demo.ts",
+    "mock-agents": "bun src/mock-agents/server.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "1.4.0",
+    "@noble/hashes": "1.4.0",
+    "drizzle-orm": "0.36.4",
+    "hono": "4.6.12",
+    "postgres": "3.4.5",
+    "viem": "2.21.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.13",
+    "typescript": "5.6.3"
+  }
+}

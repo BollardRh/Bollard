@@ -1,0 +1,22 @@
+# dstack runs this compose file inside the CVM. The image MUST be referenced by digest, so the compose hash
+# fixes exactly which harness code holds an enclave key.
+services:
+  harness:
+    image: ghcr.io/bollardrh/bollard-harness@sha256:REPLACE_WITH_RELEASE_DIGEST
+    restart: always
+    environment:
+      ROLE: harness
+      CHAIN_ID: "46630"
+      RHC_RPC_URL: https://rpc.testnet.chain.robinhood.com
+      COORDINATOR_URL: ${COORDINATOR_URL}
+      ATTESTERS_RHC: ${ATTESTERS_RHC}
+      ATTESTER_ADDRESS: ${ATTESTER_ADDRESS}
+      HOLDOUT_PATH: /holdout/holdout.enc
+      HOLDOUT_KEY: ${HOLDOUT_KEY}
+      APP_COMPOSE_PATH: /app/app-compose.json
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - /dstack/app-compose.json:/app/app-compose.json:ro
+      - holdout:/holdout:ro
+volumes:
+  holdout:

@@ -1,0 +1,34 @@
+.bollard-component-section{padding:clamp(60px,8vw,120px) 6%;background:#e5eef1;color:#203b48}
+.bollard-component-section--steps{background:#f5f9f9}
+.bollard-component-section--folders{background:#1b303c;color:#f2f7f8}
+.bollard-component-heading{display:grid;grid-template-columns:minmax(130px,.45fr) minmax(0,1.55fr);gap:24px;align-items:start;margin:0 auto 32px;max-width:1360px}
+.bollard-component-heading>p:first-child{margin:8px 0;color:#a94532;font:700 10px/1.5 Arial,sans-serif;letter-spacing:.13em}
+.bollard-component-section--folders .bollard-component-heading>p:first-child{color:#e2a08d}
+.bollard-component-heading h2{font:400 clamp(36px,4.4vw,64px)/1.04 Georgia,serif;letter-spacing:-.035em;margin:0 0 16px;max-width:800px}
+.bollard-component-heading div>p{font:16px/1.6 Arial,sans-serif;max-width:650px;margin:0;color:#55717d}
+.bollard-component-section--folders .bollard-component-heading div>p{color:#c8dbe0}
+.bollard-component-stage{max-width:1200px;margin:0 auto}
+.bollard-component-stage .sa,.bollard-component-stage .sa *,.bollard-component-stage .deck,.bollard-component-stage .deck *,.bollard-folders .cf-card,.bollard-folders .cf-card *{box-sizing:border-box}
+.bollard-component-stage--fan{max-width:960px}
+.bollard-folders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(16px,2vw,30px)}
+.bollard-folders .cf-card{text-decoration:none}
+.bollard-folders .cf-title{font-size:clamp(19px,7cqw,26px);line-height:1.2}
+.bollard-folders .cf-desc{font-size:clamp(14px,4.5cqw,16px);line-height:1.45}
+.bollard-folders .cf-card:focus-visible{outline:3px solid #eea38c;outline-offset:4px}
+.bollard-glow{--knob-size:38px;--gap:8px;--label-size:12px;--pill-pad-end:15px;--pill-pad:3px;--shell-pad:3px;--bezel:2px;vertical-align:middle;box-shadow:none}
+.bollard-glow .glow-ring-btn__pill{color:#fff;text-decoration:none;white-space:nowrap;font:600 12px/1 Arial,sans-serif}
+.bollard-glow .glow-ring-btn__icon{color:#fff}
+.bollard-glow .glow-ring-btn__knob{background:linear-gradient(140deg,#d5edf2,#ba624d);border-radius:50%}
+.bollard-glow .glow-ring-btn__pill:focus-visible{outline:3px solid #e99881;outline-offset:3px}
+.scrolltide-landing-slot{display:none;flex:none;align-items:center;justify-content:center;width:10.125rem}
+@media(min-width:768px){.scrolltide-landing-slot{display:flex}}
+@media(min-width:1440px){.scrolltide-landing-slot{width:11.625rem}}
+@media(max-width:720px){.bollard-component-section{padding:60px 5%}.bollard-component-heading{grid-template-columns:1fr;gap:8px}.bollard-folders{grid-template-columns:1fr;max-width:420px;margin:auto;gap:20px}.bollard-component-stage--fan{margin-inline:-4%}.bollard-glow{--knob-size:31px;--gap:5px;--pill-pad-end:10px}.bollard-glow .glow-ring-btn__pill{font-size:11px}.scrolltide-dashboard{margin-left:auto}}
+@media(max-width:560px){.bollard-component-stage--fan{overflow:clip}.bollard-component-stage--fan .deck{--deck-card-w:48cqw!important;--deck-card-h:72.5cqw!important;--deck-aspect:1.1!important}.bollard-component-stage--fan .deck-label{font-size:14px}.bollard-component-stage--fan .deck-plate-title{font-size:15px}.bollard-component-stage--fan .deck-plate-cta{font-size:10px}}
+
+/* Bollard's original terracotta treatment on the wider Glow Ring entry. */
+.bollard-glow{--gap:12px;--pill-pad-end:27px;border-color:#8f3b2b;background:linear-gradient(180deg,#8e3527,#a6412f)}
+.bollard-glow .glow-ring-btn__pill{--pill-edge:#d47a63;background:linear-gradient(180deg,#b64d38,#963928);box-shadow:inset 0 1px 0 #e79a83,0 3px 8px #182b3455}
+.bollard-glow .glow-ring-btn__cap{background:linear-gradient(165deg,#365969,#203b48)}
+.bollard-glow .glow-ring-btn__cap::after{border-color:#6b929b}
+@media(max-width:720px){.bollard-glow{--gap:8px;--pill-pad-end:19px}}
