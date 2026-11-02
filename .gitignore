@@ -25,3 +25,7 @@ contracts/broadcast/**/dry-run/
 
 # public repo checkout used by tools/publish-public.sh
 .public/
+.vercel
+
+# local dev harness nodes (keys and logs)
+.dev-nodes/

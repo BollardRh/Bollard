@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
@@ -10,6 +11,7 @@ import { checkOnChain, latestRating, searchAgents } from "./ratings.ts";
 import { config, stats } from "./reads.ts";
 import { nodeRoutes } from "./node.ts";
 import { createBot } from "./bot.ts";
+import { mockAgentApp } from "../mock-agents/server.ts";
 import { runIndexer } from "../workers/indexer.ts";
 import { runCoordinator } from "../workers/coordinator.ts";
 import { keeperDisputes, keeperFees, keeperRefunds, keeperRevokes } from "../workers/keeper.ts";
@@ -105,10 +107,28 @@ export function createApp(deps: AppDeps) {
   // ---------------------------------------------------------------- harness nodes
   app.route("/", nodeRoutes(deps));
 
+  // ---------------------------------------------------------------- testnet demo agents (BATP/1 over HTTPS)
+  if (deps.mockAgents) app.route("/api/mock-agents", mockAgentApp());
+
   // ---------------------------------------------------------------- scheduled jobs (pg_cron -> pg_net)
+  // Accepts CRON_SECRET (manual calls) or the Vault secret `cron_secret` that pg_cron sends. The Vault value is
+  // generated inside Supabase and read here over the API's own database connection, so it is never copied.
+  let vaultSecret: { value?: string; until: number } = { until: 0 };
+  const vaultCronSecret = async () => {
+    if (vaultSecret.until > deps.now()) return vaultSecret.value;
+    try {
+      const rows = await deps.db.execute<{ s: string }>(sql`select decrypted_secret as s from vault.decrypted_secrets where name = 'cron_secret' limit 1`);
+      vaultSecret = { value: rows[0]?.s, until: deps.now() + 300_000 };
+    } catch {
+      vaultSecret = { value: undefined, until: deps.now() + 60_000 }; // no Vault (plain Postgres in tests)
+    }
+    return vaultSecret.value;
+  };
   app.post("/api/cron/:job", async (c) => {
     const secret = c.req.header("x-cron-secret") ?? "";
-    if (!deps.cronSecret || !safeEqual(secret, deps.cronSecret)) return c.json({ error: "forbidden" }, 403);
+    const fromVault = secret ? await vaultCronSecret() : undefined;
+    const ok = (deps.cronSecret && safeEqual(secret, deps.cronSecret)) || (fromVault && safeEqual(secret, fromVault));
+    if (!secret || !ok) return c.json({ error: "forbidden" }, 403);
     const job = CRON_JOBS[c.req.param("job")];
     if (!job) return c.json({ error: "unknown job" }, 404);
     const started = deps.now();

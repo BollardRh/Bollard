@@ -7,6 +7,7 @@ import { composeHashOf } from "../attest/rtmr.ts";
 import { loadCorpus } from "../corpus/loader.ts";
 import { decryptHoldout } from "../corpus/holdout.ts";
 import { NodeClient } from "./client.ts";
+import { devEnclave, devSelfRegister } from "./devRegister.ts";
 
 /**
  * Harness node (ROLE=harness), runs inside an Intel TDX CVM on dstack (doc §4.2, §5.7).
@@ -32,10 +33,11 @@ async function main() {
   const registry = getAddress(env("ATTESTERS_RHC")) as Address;
   const appCompose = readFileSync(env("APP_COMPOSE_PATH", "/app/app-compose.json"), "utf8");
   const composeHash = composeHashOf(appCompose);
-  const enclave = Enclave.generate();
+  const dev = process.env.DEV_ATTESTOR === "1";
+  const enclave = dev ? devEnclave(chainId, process.env.DEV_ENCLAVE_KEY_FILE) : Enclave.generate();
 
   const { quote, eventLog } =
-    process.env.DEV_ATTESTOR === "1"
+    dev
       ? devQuote({ chainId, registry, key: enclave.address, composeHash })
       : await enclave.quote(chainId, registry, composeHash);
   const quoteHash = keccak256(quote);
@@ -55,12 +57,25 @@ async function main() {
   const client = new NodeClient(env("COORDINATOR_URL"), enclave);
   await client.hello({ attester: getAddress(env("ATTESTER_ADDRESS")), publicKey: enclave.publicKey, quote, eventLog, composeHash, appCompose });
   console.log(JSON.stringify({ registerEnclaveKey: { key: enclave.address, rawQuote: quote, composeHash }, corpusRoot: corpus.root, holdoutCommit: commit }));
+  if (dev && process.env.ATTESTER_PRIVATE_KEY && process.env.STAKE_TOKEN_RHC) {
+    const r = await devSelfRegister({
+      chainId,
+      rpcUrl: env("RHC_RPC_URL", "https://rpc.testnet.chain.robinhood.com"),
+      attesters: registry,
+      stakeToken: getAddress(process.env.STAKE_TOKEN_RHC),
+      attesterKey: process.env.ATTESTER_PRIVATE_KEY as Hex,
+      enclave,
+      quote,
+      composeHash,
+    });
+    console.log(`dev self-registration: ${r} (key ${enclave.address})`);
+  }
 
   const chain = createPublicClient({ transport: http(env("RHC_RPC_URL", "https://rpc.testnet.chain.robinhood.com")) });
   const abi = parseAbi(["function isActiveKey(address) view returns (bool)"]);
   const isActiveKey = (key: Address) => chain.readContract({ address: registry, abi, functionName: "isActiveKey", args: [key] });
 
-  const pollMs = Number(env("POLL_MS", "5000"));
+  const pollMs = Number(env("POLL_MS", "30000"));
   for (;;) {
     try {
       const { job } = await client.claim();

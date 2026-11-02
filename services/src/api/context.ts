@@ -24,6 +24,8 @@ export interface AppDeps {
   telegram?: { token: string; webhookSecret?: string; opsChatId?: string };
   notify: Notify;
   allowHttpEndpoints: boolean;
+  /** Testnet only: serve the naive / hardened / flaky mock agents at /api/mock-agents/<name>. */
+  mockAgents?: boolean;
   now(): number; // ms
 }
 
@@ -48,6 +50,18 @@ export function telegramNotify(token?: string): Notify {
   };
 }
 
+/**
+ * DATABASE_URL, or POSTGRES_URL as set by the Supabase <-> Vercel integration (transaction pooler). Query
+ * flags meant for other drivers (pgbouncer, supa) are dropped; postgres.js would send them to the server.
+ */
+export function databaseUrl(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.DATABASE_URL ?? env.POSTGRES_URL;
+  if (!raw) return undefined;
+  const u = new URL(raw);
+  for (const k of ["pgbouncer", "supa", "connection_limit"]) u.searchParams.delete(k);
+  return u.toString();
+}
+
 export function createDepsFromEnv(env: NodeJS.ProcessEnv = process.env): AppDeps {
   const chain = chainConfigFromEnv(env);
   const viemChain = viemChainOf(chain);
@@ -58,7 +72,7 @@ export function createDepsFromEnv(env: NodeJS.ProcessEnv = process.env): AppDeps
     : undefined;
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
   return {
-    db: createDb(env.DATABASE_URL).db,
+    db: createDb(databaseUrl(env)).db,
     chain,
     viemChain,
     publicClient: createPublicClient({ chain: viemChain, transport }) as PublicClient<Transport, Chain>,
@@ -72,6 +86,7 @@ export function createDepsFromEnv(env: NodeJS.ProcessEnv = process.env): AppDeps
       : undefined,
     notify: telegramNotify(env.TELEGRAM_BOT_TOKEN),
     allowHttpEndpoints: env.ALLOW_HTTP_ENDPOINTS === "1",
+    mockAgents: env.ENABLE_MOCK_AGENTS === "1" && chain.chainId === 46630,
     now: () => Date.now(),
   };
 }
