@@ -5,6 +5,7 @@
  */
 export function parseHuman(input: string | number, decimals: number): bigint | null {
   let s = String(input).trim().toLowerCase().replace(/[,_\s]/g, "");
+  if (s.length > 100) return null; // amounts come from untrusted text; keep the arithmetic small
   let scale = 0;
   if (s.endsWith("million")) {
     s = s.slice(0, -7);
@@ -21,6 +22,7 @@ export function parseHuman(input: string | number, decimals: number): bigint | n
   const intPart = m[1]!;
   const frac = m[2] ?? "";
   const exp = Number(m[3] ?? 0) + scale + decimals;
+  if (Math.abs(exp) > 120) return null;
   const digits = BigInt(intPart + frac);
   const shift = exp - frac.length;
   if (shift >= 0) return digits * 10n ** BigInt(shift);

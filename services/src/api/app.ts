@@ -2,11 +2,12 @@ import { timingSafeEqual } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { webhookCallback } from "grammy";
 import type { AppDeps } from "./context.ts";
 import { appRouter } from "./router.ts";
-import { rateLimit } from "./rateLimit.ts";
+import { rateLimit, trpcCalls } from "./rateLimit.ts";
 import { checkOnChain, latestRating, searchAgents } from "./ratings.ts";
 import { config, recentRatings, stats } from "./reads.ts";
 import { nodeRoutes } from "./node.ts";
@@ -29,6 +30,9 @@ import { runAlerts } from "../workers/alerts.ts";
  *   POST /api/cron/:job                                                             (x-cron-secret)
  *   POST /api/telegram                                                              (Telegram secret token)
  */
+
+/** Lease for a cron job's lock; longer than the function's maxDuration, released early when the run ends. */
+const JOB_LEASE_S = 150;
 
 export const CRON_JOBS: Record<string, (deps: AppDeps) => Promise<unknown>> = {
   indexer: runIndexer,
@@ -60,9 +64,11 @@ export function createApp(deps: AppDeps) {
   app.use("/api/v1/*", cors({ origin: "*", allowMethods: ["GET"] }));
 
   app.get("/api/health", (c) => c.json({ ok: true, chainId: deps.chain.chainId }));
-  app.get("/api/v1/config", async (c) => c.json(await config(deps)));
-  app.get("/api/v1/stats", async (c) => c.json(await stats(deps)));
-  app.get("/api/v1/recent", async (c) => c.json(await recentRatings(deps)));
+  // dashboard reads: cached briefly at Vercel's CDN, so traffic spikes do not reach the database
+  const cdn = (seconds: number) => ({ "cache-control": `public, max-age=0, s-maxage=${seconds}, stale-while-revalidate=${seconds * 4}` });
+  app.get("/api/v1/config", async (c) => c.json(await config(deps), 200, cdn(60)));
+  app.get("/api/v1/stats", async (c) => c.json(await stats(deps), 200, cdn(15)));
+  app.get("/api/v1/recent", async (c) => c.json(await recentRatings(deps), 200, cdn(15)));
 
   // ---------------------------------------------------------------- REST (doc §8)
   app.use("/v1/*", rateLimit(deps));
@@ -96,20 +102,37 @@ export function createApp(deps: AppDeps) {
   app.get("/v1/search", async (c) => {
     const q = c.req.query("q") ?? "";
     if (q.trim().length < 2 && !/^\d+$/.test(q.trim())) return c.json({ error: "q must be an agent id or at least 2 characters" }, 400);
+    if (q.length > 100) return c.json({ error: "q is limited to 100 characters" }, 400);
     return c.json(await searchAgents(deps, q));
   });
 
   // ---------------------------------------------------------------- tRPC (doc §8)
-  app.use("/api/trpc/*", rateLimit(deps));
+  // a batched call ("a,b,c?batch=1") is charged one token per procedure, at most 10 per request
+  app.use("/api/trpc/*", rateLimit(deps, { cost: trpcCalls }));
   app.all("/api/trpc/*", (c) =>
-    fetchRequestHandler({ endpoint: "/api/trpc", req: c.req.raw, router: appRouter, createContext: () => ({ deps }) }),
+    fetchRequestHandler({
+      endpoint: "/api/trpc",
+      req: c.req.raw,
+      router: appRouter,
+      createContext: () => ({ deps }),
+      onError: ({ error, path }) => {
+        if (error.code === "INTERNAL_SERVER_ERROR") console.error(`trpc ${path}:`, error.cause ?? error);
+      },
+    }),
   );
 
   // ---------------------------------------------------------------- harness nodes
+  // nodes poll every 30 s; the bucket is per IP and generous enough for several nodes behind one address
+  app.use("/api/node/*", bodyLimit({ maxSize: 4 * 1024 * 1024, onError: (c) => c.json({ error: "body too large" }, 413) }));
+  app.use("/api/node/*", rateLimit(deps, { bucket: "node", perDay: 20_000 }));
   app.route("/", nodeRoutes(deps));
 
   // ---------------------------------------------------------------- testnet demo agents (BATP/1 over HTTPS)
-  if (deps.mockAgents) app.route("/api/mock-agents", mockAgentApp());
+  if (deps.mockAgents) {
+    app.use("/api/mock-agents/*", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "body too large" }, 413) }));
+    app.use("/api/mock-agents/*", rateLimit(deps, { bucket: "mock", perDay: 20_000 }));
+    app.route("/api/mock-agents", mockAgentApp());
+  }
 
   // ---------------------------------------------------------------- scheduled jobs (pg_cron -> pg_net)
   // Accepts CRON_SECRET (manual calls) or the Vault secret `cron_secret` that pg_cron sends. The Vault value is
@@ -130,17 +153,27 @@ export function createApp(deps: AppDeps) {
     const fromVault = secret ? await vaultCronSecret() : undefined;
     const ok = (deps.cronSecret && safeEqual(secret, deps.cronSecret)) || (fromVault && safeEqual(secret, fromVault));
     if (!secret || !ok) return c.json({ error: "forbidden" }, 403);
-    const job = CRON_JOBS[c.req.param("job")];
-    if (!job) return c.json({ error: "unknown job" }, 404);
+    const name = c.req.param("job");
+    if (!Object.hasOwn(CRON_JOBS, name)) return c.json({ error: "unknown job" }, 404);
+    const job = CRON_JOBS[name]!;
+    // one run per job at a time: a slow tick must not overlap the next one
+    const locked = await deps.db.execute<{ ok: boolean }>(sql`select take_job_lock(${name}, ${JOB_LEASE_S}) as ok`);
+    if (!locked[0]?.ok) return c.json({ ok: true, skipped: "previous run still active" });
     const started = deps.now();
-    const result = await job(deps);
+    let result: unknown;
+    try {
+      result = await job(deps);
+    } finally {
+      await deps.db.execute(sql`update job_locks set locked_until = clock_timestamp() where job = ${name}`);
+    }
     return c.body(JSON.stringify({ ok: true, ms: deps.now() - started, result }, (_, v) => (typeof v === "bigint" ? v.toString() : v)), 200, {
       "content-type": "application/json",
     });
   });
 
   // ---------------------------------------------------------------- Telegram
-  if (deps.telegram) {
+  // without a secret token anyone could post forged updates, so the webhook is not served at all
+  if (deps.telegram?.webhookSecret) {
     const bot = createBot(deps, deps.telegram.token);
     const handle = webhookCallback(bot, "hono", { secretToken: deps.telegram.webhookSecret });
     app.post("/api/telegram", (c) => handle(c));

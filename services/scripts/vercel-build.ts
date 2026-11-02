@@ -43,7 +43,7 @@ writeFileSync(
       launcherType: "Nodejs",
       shouldAddHelpers: false,
       supportsResponseStreaming: true,
-      maxDuration: 60,
+      maxDuration: 120,
       regions: ["fra1"], // next to the Supabase database (eu-central-1)
     },
     null,
@@ -51,12 +51,41 @@ writeFileSync(
   ),
 );
 
+// Security headers for every response. The site uses inline scripts and styles (scrolltide pages), so
+// script-src keeps 'unsafe-inline'; everything else is limited to this origin, Google Fonts and the chain RPC
+// the wallet bundle reads from.
+const RPC_ORIGIN = new URL(process.env.RHC_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com").origin;
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  `connect-src 'self' ${RPC_ORIGIN}`,
+  "frame-src 'self'",
+  "frame-ancestors 'self'",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": CSP,
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "SAMEORIGIN",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+};
+
 writeFileSync(
   `${OUT}/config.json`,
   JSON.stringify(
     {
       version: 3,
       routes: [
+        { src: "^/(.*)$", headers: SECURITY_HEADERS, continue: true },
         { src: "^/api/(.*)$", dest: "/api" },
         { src: "^/v1/(.*)$", dest: "/api" },
         { handle: "filesystem" },

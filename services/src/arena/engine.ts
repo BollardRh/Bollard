@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
+  BaseError,
   createWalletClient,
   decodeEventLog,
   encodeAbiParameters,
@@ -90,9 +91,12 @@ async function blrd(deps: AppDeps): Promise<Address | undefined> {
   return blrdAddress;
 }
 
-/** What the canary holds, in BATP balance form. Tokens checked: the fee token, the bounty token and $BLRD. */
-async function canaryBalances(deps: AppDeps, canary: Address, bountyToken: Address): Promise<BatpBalance[]> {
-  const candidates = [...new Set([deps.chain.contracts.feeToken, bountyToken, await blrd(deps)].filter(Boolean).map((a) => getAddress(a!)))];
+/**
+ * What the canary holds, in BATP balance form. Only Bollard's own tokens (the fee token and $BLRD) are read or
+ * moved: an arbitrary token's transfer() or symbol() would be attacker code running on the house key's gas.
+ */
+async function canaryBalances(deps: AppDeps, canary: Address): Promise<BatpBalance[]> {
+  const candidates = [...new Set([deps.chain.contracts.feeToken, await blrd(deps)].filter(Boolean).map((a) => getAddress(a!)))];
   const out: BatpBalance[] = [];
   for (const token of candidates) {
     const raw = (await deps.publicClient.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [canary] })) as bigint;
@@ -122,6 +126,13 @@ async function houseAgent(deps: AppDeps, agentId: string | null) {
   const [h] = await deps.db.select().from(houseAgents).where(and(eq(houseAgents.chainId, deps.chain.chainId), eq(houseAgents.agentId, agentId)));
   return h;
 }
+
+/**
+ * openArena is permissionless, so anyone can open an arena that names our house agent and our agent key. The
+ * engine serves an arena only when its operator registered that exact (agent key, funder) pair.
+ */
+const servedBy = (h: typeof houseAgents.$inferSelect | undefined, a: typeof arenas.$inferSelect) =>
+  Boolean(h?.agentKey && h.funder && h.agentKey.toLowerCase() === a.agentKey && h.funder.toLowerCase() === a.funder);
 
 // ------------------------------------------------------------------ sessions
 export const sessionIdOf = (chainId: number, arenaId: string, attacker: Address, openedBlock: bigint) =>
@@ -193,37 +204,43 @@ const sessionView = (s: typeof arenaSessions.$inferSelect, messages: Awaited<Ret
 export async function openSession(deps: AppDeps, i: SessionInput) {
   if (i.chainId !== deps.chain.chainId) throw fail("BAD_REQUEST", "unknown chain");
   const attacker = getAddress(i.attacker);
-  await openArena(deps, i.arenaId);
+  const arena = await openArena(deps, i.arenaId);
+  if (!servedBy(await houseAgent(deps, arena.houseAgentId), arena)) throw fail("PRECONDITION_FAILED", "this arena is not run by Bollard's house agents");
   const at = await liveAttempt(deps, i.arenaId, attacker, i.salt);
   const sessionId = sessionIdOf(i.chainId, i.arenaId, attacker, at.openedBlock);
 
   const [existing] = await deps.db.select().from(arenaSessions).where(eq(arenaSessions.sessionId, sessionId));
   if (existing) return sessionView(existing, await messagesOf(deps, sessionId));
 
-  const [recent] = await deps.db
-    .select({ createdAt: arenaSessions.createdAt })
-    .from(arenaSessions)
-    .where(and(eq(arenaSessions.chainId, i.chainId), eq(arenaSessions.attacker, attacker.toLowerCase())))
-    .orderBy(desc(arenaSessions.createdAt))
-    .limit(1);
-  if (recent && deps.now() - recent.createdAt.getTime() < SESSION_COOLDOWN_MS) {
-    const wait = Math.ceil((SESSION_COOLDOWN_MS - (deps.now() - recent.createdAt.getTime())) / 60_000);
-    throw fail("TOO_MANY_REQUESTS", `one attempt per wallet per 10 minutes; try again in ${wait} min`);
-  }
-  const [row] = await deps.db
-    .insert(arenaSessions)
-    .values({
-      sessionId,
-      chainId: i.chainId,
-      arenaId: i.arenaId,
-      attacker: attacker.toLowerCase(),
-      openedBlock: at.openedBlock,
-      expiresAt: at.expiresAt,
-      commit: at.commit,
-      transcriptHash: at.commit,
-    })
-    .onConflictDoNothing()
-    .returning();
+  // the cooldown check and the insert run under a per-wallet lock, so parallel opens cannot both pass
+  const row = await deps.db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`arena-session:${attacker.toLowerCase()}`}))`);
+    const [recent] = await tx
+      .select({ createdAt: arenaSessions.createdAt })
+      .from(arenaSessions)
+      .where(and(eq(arenaSessions.chainId, i.chainId), eq(arenaSessions.attacker, attacker.toLowerCase())))
+      .orderBy(desc(arenaSessions.createdAt))
+      .limit(1);
+    if (recent && deps.now() - recent.createdAt.getTime() < SESSION_COOLDOWN_MS) {
+      const wait = Math.ceil((SESSION_COOLDOWN_MS - (deps.now() - recent.createdAt.getTime())) / 60_000);
+      throw fail("TOO_MANY_REQUESTS", `one attempt per wallet per 10 minutes; try again in ${wait} min`);
+    }
+    const [r] = await tx
+      .insert(arenaSessions)
+      .values({
+        sessionId,
+        chainId: i.chainId,
+        arenaId: i.arenaId,
+        attacker: attacker.toLowerCase(),
+        openedBlock: at.openedBlock,
+        expiresAt: at.expiresAt,
+        commit: at.commit,
+        transcriptHash: at.commit,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return r;
+  });
   const s = row ?? (await deps.db.select().from(arenaSessions).where(eq(arenaSessions.sessionId, sessionId)))[0]!;
   return sessionView(s, []);
 }
@@ -257,7 +274,58 @@ interface ActionResult {
   error?: string;
 }
 
-/** Sends one attacker message to the house agent and carries out the transfers it decides on. */
+/** Gas cap for one canary transfer (a CanaryWallet.transfer of a Bollard token plus the ArenaBounty callback). */
+const TRANSFER_GAS = 350_000n;
+/** How long one message may hold its session; longer than the function's time limit. */
+const SESSION_LEASE_S = 150;
+
+/** Carries out the house agent's first transfer (one per message), signed with the arena's agent key. */
+async function executeTransfer(deps: AppDeps, arena: typeof arenas.$inferSelect, balances: BatpBalance[], action: { tool: string; args: Record<string, unknown> }) {
+  const r: ActionResult = { tool: action.tool, args: action.args, executed: false };
+  try {
+    const tokenRef = String(action.args.token ?? "");
+    const bal = balances.find((b) => b.symbol.toLowerCase() === tokenRef.toLowerCase() || b.token.toLowerCase() === tokenRef.toLowerCase());
+    const to = String(action.args.to ?? "");
+    if (!bal || !/^0x[0-9a-fA-F]{40}$/.test(to)) throw new Error("unknown token or recipient");
+    const rawArg = String(action.args.amount ?? "");
+    const amount = action.args.unit === "raw" ? (/^\d{1,78}$/.test(rawArg) ? BigInt(rawArg) : null) : parseHuman(rawArg, bal.decimals);
+    if (!amount || amount <= 0n) throw new Error("bad amount");
+    const sendAmount = amount > BigInt(bal.raw) ? BigInt(bal.raw) : amount;
+    const w = arenaAgent(deps);
+    if (!w || w.account.address.toLowerCase() !== arena.agentKey) throw new Error("this engine does not hold the arena's agent key");
+    const { request } = await deps.publicClient.simulateContract({
+      address: getAddress(arena.canary),
+      abi: canaryAbi,
+      functionName: "transfer",
+      args: [getAddress(bal.token), getAddress(to), sendAmount],
+      account: w.account,
+      gas: TRANSFER_GAS,
+    });
+    const hash = await w.writeContract(request);
+    r.tx = hash;
+    r.args = { ...action.args, amount: formatHuman(sendAmount, bal.decimals) };
+    const receipt = await deps.publicClient.waitForTransactionReceipt({ hash, timeout: 30_000 });
+    r.executed = receipt.status === "success";
+    for (const log of receipt.logs) {
+      try {
+        const ev = decodeEventLog({ abi: arenaBountyAbi, data: log.data, topics: log.topics });
+        if (ev.eventName === "CanaryMoved") r.counted = Boolean((ev.args as { counted: boolean }).counted);
+        if (ev.eventName === "ArenaWon") r.won = true;
+      } catch {
+        /* token Transfer logs */
+      }
+    }
+  } catch (e) {
+    r.error = e instanceof BaseError || e instanceof Error ? revertName(e) : String(e);
+  }
+  return r;
+}
+
+/**
+ * Sends one attacker message to the house agent and carries out the transfer it decides on. A session handles
+ * one message at a time (a lease on the row), the attacker's message is stored before anything is sent, and the
+ * outcome is stored even when the transfer fails.
+ */
 export async function sendMessage(deps: AppDeps, i: SessionInput & { content: string }) {
   if (i.chainId !== deps.chain.chainId) throw fail("BAD_REQUEST", "unknown chain");
   const content = i.content.trim();
@@ -268,116 +336,81 @@ export async function sendMessage(deps: AppDeps, i: SessionInput & { content: st
   if (s.status !== "open") throw fail("PRECONDITION_FAILED", `session is ${s.status}`);
   if (s.expiresAt.getTime() <= deps.now()) throw fail("PRECONDITION_FAILED", "attempt expired; open a new one");
   const arena = await openArena(deps, i.arenaId);
+  const house = await houseAgent(deps, arena.houseAgentId);
+  if (!house || !servedBy(house, arena)) throw fail("PRECONDITION_FAILED", "this arena is not run by Bollard's house agents");
 
-  // reserve a message slot atomically, so parallel requests cannot pass the limit
+  // take the session (one message at a time) and a message slot in one atomic update
   const [slot] = await deps.db
     .update(arenaSessions)
-    .set({ messages: sql`${arenaSessions.messages} + 1` })
-    .where(and(eq(arenaSessions.sessionId, s.sessionId), eq(arenaSessions.status, "open"), sql`${arenaSessions.messages} < ${MAX_MESSAGES}`))
-    .returning({ messages: arenaSessions.messages });
-  if (!slot) throw fail("TOO_MANY_REQUESTS", `this attempt has used its ${MAX_MESSAGES} messages`);
-
-  const house = await houseAgent(deps, arena.houseAgentId);
-  if (!house) throw fail("PRECONDITION_FAILED", "this arena's house agent is not configured");
-  const canary = getAddress(arena.canary);
-  const balances = await canaryBalances(deps, canary, getAddress(arena.token));
-  const history = await messagesOf(deps, s.sessionId);
-
-  const attackerAddr = getAddress(s.attacker);
-  const external = (text: string): BatpMessage => ({ role: "external", channel: "arena", from: attackerAddr, content: text, provenance: { trusted: false, author: attackerAddr } });
-  const req: BatpRequest = {
-    protocol: BATP_PROTOCOL,
-    runId: s.sessionId,
-    caseId: `arena-${i.arenaId}`,
-    seed: 0,
-    turn: slot.messages,
-    principal: { owner: getAddress(arena.funder), allowlist: [getAddress(arena.funder)], spendCapUsd: 0 },
-    wallet: { address: canary, chainId: deps.chain.chainId, balances },
-    tools: TOOLS,
-    messages: [
-      { role: "system", channel: "config", content: house.systemPrompt, provenance: { trusted: true } },
-      ...history.map((m): BatpMessage =>
-        m.role === "attacker" ? external(m.content) : { role: "assistant", channel: "arena", content: m.content, provenance: { trusted: true } },
+    .set({ messages: sql`${arenaSessions.messages} + 1`, busyUntil: sql`clock_timestamp() + make_interval(secs => ${SESSION_LEASE_S})` })
+    .where(
+      and(
+        eq(arenaSessions.sessionId, s.sessionId),
+        eq(arenaSessions.status, "open"),
+        sql`${arenaSessions.messages} < ${MAX_MESSAGES}`,
+        sql`(${arenaSessions.busyUntil} is null or ${arenaSessions.busyUntil} < clock_timestamp())`,
       ),
-      external(content),
-    ],
-  };
-
-  const { res, timedOut } = await clientFor(house.endpoint).step(req);
-  const reply = timedOut ? "(no reply: the house agent timed out)" : res.reply;
-  const results: ActionResult[] = [];
-  let winTx: Hex | undefined;
-
-  for (const action of res.actions.slice(0, 4)) {
-    const r: ActionResult = { tool: action.tool, args: action.args, executed: false };
-    results.push(r);
-    if (action.tool !== "transfer") {
-      r.error = "only transfers move canary funds";
-      continue;
-    }
-    const tokenRef = String(action.args.token ?? "");
-    const bal = balances.find((b) => b.symbol.toLowerCase() === tokenRef.toLowerCase() || b.token.toLowerCase() === tokenRef.toLowerCase());
-    const to = String(action.args.to ?? "");
-    if (!bal || !/^0x[0-9a-fA-F]{40}$/.test(to)) {
-      r.error = "unknown token or recipient";
-      continue;
-    }
-    const amount = action.args.unit === "raw" ? BigInt(String(action.args.amount ?? "0")) : parseHuman(String(action.args.amount ?? ""), bal.decimals);
-    if (!amount || amount <= 0n) {
-      r.error = "bad amount";
-      continue;
-    }
-    const sendAmount = amount > BigInt(bal.raw) ? BigInt(bal.raw) : amount;
-    const w = arenaAgent(deps);
-    if (!w || w.account.address.toLowerCase() !== arena.agentKey) {
-      r.error = "this engine does not hold the arena's agent key";
-      continue;
-    }
-    try {
-      const { request } = await deps.publicClient.simulateContract({
-        address: canary,
-        abi: canaryAbi,
-        functionName: "transfer",
-        args: [getAddress(bal.token), getAddress(to), sendAmount],
-        account: w.account,
-      });
-      const hash = await w.writeContract(request);
-      const receipt = await deps.publicClient.waitForTransactionReceipt({ hash, timeout: 45_000 });
-      r.executed = receipt.status === "success";
-      r.tx = hash;
-      r.args = { ...action.args, amount: formatHuman(sendAmount, bal.decimals) };
-      for (const log of receipt.logs) {
-        try {
-          const ev = decodeEventLog({ abi: arenaBountyAbi, data: log.data, topics: log.topics });
-          if (ev.eventName === "CanaryMoved") r.counted = Boolean((ev.args as { counted: boolean }).counted);
-          if (ev.eventName === "ArenaWon") {
-            r.won = true;
-            winTx = hash;
-          }
-        } catch {
-          /* token Transfer logs */
-        }
-      }
-      bal.raw = (BigInt(bal.raw) - sendAmount).toString();
-    } catch (e) {
-      r.error = revertName(e);
-    }
+    )
+    .returning({ messages: arenaSessions.messages, transcriptHash: arenaSessions.transcriptHash });
+  if (!slot) {
+    if (s.messages >= MAX_MESSAGES) throw fail("TOO_MANY_REQUESTS", `this attempt has used its ${MAX_MESSAGES} messages`);
+    throw fail("TOO_MANY_REQUESTS", "the house agent is still answering your previous message");
   }
 
-  // record both turns and extend the transcript hash
-  let hash = s.transcriptHash as Hex;
-  hash = appendTranscript(hash, "attacker", content);
-  hash = appendTranscript(hash, "agent", reply);
-  await deps.db.insert(arenaMessages).values([
-    { sessionId: s.sessionId, chainId: s.chainId, arenaId: s.arenaId, attacker: s.attacker, role: "attacker", content },
-    { sessionId: s.sessionId, chainId: s.chainId, arenaId: s.arenaId, attacker: s.attacker, role: "agent", content: reply, actions: results },
-  ]);
-  await deps.db
-    .update(arenaSessions)
-    .set({ transcriptHash: hash, ...(winTx ? { status: "won" as const, winTx } : {}) })
-    .where(eq(arenaSessions.sessionId, s.sessionId));
-  if (winTx) {
-    await deps.db.update(arenas).set({ status: "won", winner: s.attacker }).where(and(eq(arenas.chainId, s.chainId), eq(arenas.arenaId, s.arenaId)));
+  let hash = appendTranscript(slot.transcriptHash as Hex, "attacker", content);
+  let winTx: Hex | undefined;
+  let reply = "";
+  let results: ActionResult[] = [];
+  try {
+    const history = await messagesOf(deps, s.sessionId);
+    await deps.db.insert(arenaMessages).values({ sessionId: s.sessionId, chainId: s.chainId, arenaId: s.arenaId, attacker: s.attacker, role: "attacker", content });
+    await deps.db.update(arenaSessions).set({ transcriptHash: hash }).where(eq(arenaSessions.sessionId, s.sessionId));
+
+    const canary = getAddress(arena.canary);
+    const balances = await canaryBalances(deps, canary);
+    const attackerAddr = getAddress(s.attacker);
+    const external = (text: string): BatpMessage => ({ role: "external", channel: "arena", from: attackerAddr, content: text, provenance: { trusted: false, author: attackerAddr } });
+    const req: BatpRequest = {
+      protocol: BATP_PROTOCOL,
+      runId: s.sessionId,
+      caseId: `arena-${i.arenaId}`,
+      seed: 0,
+      turn: slot.messages,
+      principal: { owner: getAddress(arena.funder), allowlist: [getAddress(arena.funder)], spendCapUsd: 0 },
+      wallet: { address: canary, chainId: deps.chain.chainId, balances },
+      tools: TOOLS,
+      messages: [
+        { role: "system", channel: "config", content: house.systemPrompt, provenance: { trusted: true } },
+        ...history.map((m): BatpMessage =>
+          m.role === "attacker" ? external(m.content) : { role: "assistant", channel: "arena", content: m.content, provenance: { trusted: true } },
+        ),
+        external(content),
+      ],
+    };
+
+    const { res, timedOut } = await clientFor(house.endpoint).step(req);
+    reply = (timedOut ? "(no reply: the house agent timed out)" : res.reply).slice(0, MAX_MESSAGE_CHARS);
+    const actions = res.actions.slice(0, 4);
+    const firstTransfer = actions.findIndex((a) => a.tool === "transfer");
+    results = await Promise.all(
+      actions.map(async (a, idx) =>
+        idx === firstTransfer
+          ? executeTransfer(deps, arena, balances, a)
+          : ({ tool: a.tool, args: a.args, executed: false, error: a.tool === "transfer" ? "one transfer per message" : "only transfers move canary funds" } as ActionResult),
+      ),
+    );
+    winTx = results.find((r) => r.won)?.tx;
+  } finally {
+    // the agent's turn is recorded whatever happened above, and the session is released
+    hash = appendTranscript(hash, "agent", reply);
+    await deps.db.insert(arenaMessages).values({ sessionId: s.sessionId, chainId: s.chainId, arenaId: s.arenaId, attacker: s.attacker, role: "agent", content: reply, actions: results });
+    await deps.db
+      .update(arenaSessions)
+      .set({ transcriptHash: hash, busyUntil: null, ...(winTx ? { status: "won" as const, winTx } : {}) })
+      .where(eq(arenaSessions.sessionId, s.sessionId));
+    if (winTx) {
+      await deps.db.update(arenas).set({ status: "won", winner: s.attacker }).where(and(eq(arenas.chainId, s.chainId), eq(arenas.arenaId, s.arenaId)));
+    }
   }
 
   return { reply, actions: results, messagesLeft: Math.max(0, MAX_MESSAGES - slot.messages), won: Boolean(winTx), winTx: winTx ?? null, transcriptHash: hash };
@@ -397,7 +430,7 @@ export async function arenaDetails(deps: AppDeps, arenaId: string) {
       ? (deps.publicClient.readContract({ address: deps.chain.contracts.arenaBounty, abi: arenaBountyAbi, functionName: "attemptWindow" }) as Promise<bigint>)
       : 0n,
   ]);
-  const canary = await canaryBalances(deps, getAddress(a.canary), getAddress(a.token)).catch(() => []);
+  const canary = await canaryBalances(deps, getAddress(a.canary)).catch(() => []);
   const [counts] = await deps.db.execute<{ attempts: number; sessions: number; messages: number }>(sql`
     select
       (select count(*)::int from arena_attempts where chain_id = ${a.chainId} and arena_id = ${a.arenaId}) as attempts,

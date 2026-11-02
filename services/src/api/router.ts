@@ -8,7 +8,12 @@ import { arenaDetails, arenaOverview, arenaWins, getSession, openSession, sendMe
 
 /** tRPC v11 router (backend doc §8). All big numbers travel as decimal strings. */
 
-const t = initTRPC.context<{ deps: AppDeps }>().create();
+const t = initTRPC.context<{ deps: AppDeps }>().create({
+  isDev: false, // never send stack traces
+  // unexpected errors (database, RPC, storage) keep their details server-side; expected ones say what is wrong
+  errorFormatter: ({ shape, error }) =>
+    error.code === "INTERNAL_SERVER_ERROR" ? { ...shape, message: "internal error", data: { ...shape.data, stack: undefined } } : shape,
+});
 
 const Addr = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const Hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/) as unknown as z.ZodType<`0x${string}`>;
@@ -41,7 +46,7 @@ export const appRouter = t.router({
       .mutation(({ input, ctx }) => setEndpoint(ctx.deps, input)),
     fixList: t.procedure
       .input(z.object({ chainId: z.number().int(), ratingId: Uint, signature: Sig }))
-      .query(({ input, ctx }) => fixList(ctx.deps, input)), // owner-signed
+      .mutation(({ input, ctx }) => fixList(ctx.deps, input)), // owner-signed; POST keeps the signature out of URLs
   }),
   arena: t.router({
     list: t.procedure.query(({ ctx }) => arenaOverview(ctx.deps)),

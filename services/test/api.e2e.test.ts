@@ -143,13 +143,15 @@ maybe("API end to end (local chain + Postgres)", () => {
       const q = devQuote({ chainId: 31337, registry: addr.attesters, key: enclaves[i]!.address, composeHash });
       quotes.push(q.quote);
       clients.push(new NodeClient(base, enclaves[i]!));
-      expect(
-        await clients[i]!.hello({ attester: w.account!.address, publicKey: enclaves[i]!.publicKey, quote: q.quote, eventLog: q.eventLog, composeHash, appCompose }),
-      ).toEqual({ ok: true });
+      const hello = () =>
+        clients[i]!.hello({ attester: w.account!.address, publicKey: enclaves[i]!.publicKey, quote: q.quote, eventLog: q.eventLog, composeHash, appCompose });
+      // hello is refused until the key is registered on-chain
+      expect(String(await hello().catch((e) => e))).toContain("register the enclave key on-chain first");
       await chain.send(chain.wallet(0), addr.blrd, A.erc20.abi, "mint", [w.account!.address, parseEther("1000")]);
       await chain.send(w, addr.blrd, A.erc20.abi, "approve", [addr.attesters, parseEther("1000")]);
       await chain.send(w, addr.attesters, A.attesters.abi, "bond", [parseEther("1000")]);
       await chain.send(w, addr.attesters, A.attesters.abi, "registerEnclaveKey", [enclaves[i]!.address, q.quote, composeHash]);
+      expect(await hello()).toEqual({ ok: true });
     }
   }, 60_000);
 
@@ -243,9 +245,9 @@ maybe("API end to end (local chain + Postgres)", () => {
   test("the owner reads the fix list; others cannot", async () => {
     const owner = chain.wallet(4);
     const sig = (w: ReturnType<LocalChain["wallet"]>) => w.signMessage({ account: w.account!, message: fixListMessage(31337, "1") });
-    const mine = await trpcQuery("builder.fixList", { chainId: 31337, ratingId: "1", signature: await sig(owner) });
+    const mine = await trpcMutation("builder.fixList", { chainId: 31337, ratingId: "1", signature: await sig(owner) });
     expect(mine.result?.data).toMatchObject({ failedCases: [], holdout: [] });
-    const theirs = await trpcQuery("builder.fixList", { chainId: 31337, ratingId: "1", signature: await sig(chain.wallet(3)) });
+    const theirs = await trpcMutation("builder.fixList", { chainId: 31337, ratingId: "1", signature: await sig(chain.wallet(3)) });
     expect(JSON.stringify(theirs.error)).toContain("only the agent owner");
   });
 

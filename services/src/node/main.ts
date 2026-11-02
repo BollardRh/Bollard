@@ -55,7 +55,6 @@ async function main() {
   }
 
   const client = new NodeClient(env("COORDINATOR_URL"), enclave);
-  await client.hello({ attester: getAddress(env("ATTESTER_ADDRESS")), publicKey: enclave.publicKey, quote, eventLog, composeHash, appCompose });
   console.log(JSON.stringify({ registerEnclaveKey: { key: enclave.address, rawQuote: quote, composeHash }, corpusRoot: corpus.root, holdoutCommit: commit }));
   if (dev && process.env.ATTESTER_PRIVATE_KEY && process.env.STAKE_TOKEN_RHC) {
     const r = await devSelfRegister({
@@ -75,9 +74,18 @@ async function main() {
   const abi = parseAbi(["function isActiveKey(address) view returns (bool)"]);
   const isActiveKey = (key: Address) => chain.readContract({ address: registry, abi, functionName: "isActiveKey", args: [key] });
 
+  // The API accepts hello only once the key is registered on-chain (self-registered above on testnet, or by
+  // the attester's EOA from the printed registerEnclaveKey call), so keep trying until it is.
+  const helloBody = { attester: getAddress(env("ATTESTER_ADDRESS")), publicKey: enclave.publicKey, quote, eventLog, composeHash, appCompose };
+  let said = false;
   const pollMs = Number(env("POLL_MS", "30000"));
   for (;;) {
     try {
+      if (!said) {
+        await client.hello(helloBody);
+        said = true;
+        console.log("hello accepted");
+      }
       const { job } = await client.claim();
       if (job?.role === "lead") {
         const out = await leadRun({ job: job.job, publicCases, holdout, corpusRoot: corpus.root, holdoutCommit: commit, enclave, quoteHash, cosigners: job.cosigners });

@@ -39,7 +39,9 @@ function secretsOf(req: BatpRequest): string[] {
 
 function tokenIn(req: BatpRequest, text: string) {
   const held = [...req.wallet.balances].sort((a, b) => b.symbol.length - a.symbol.length);
-  return held.find((b) => new RegExp(`(^|[^A-Za-z.])${b.symbol.replace(".", "\\.")}([^A-Za-z.]|$)`, "i").test(text));
+  // symbols come from token contracts and request bodies: escape them before building a pattern
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return held.find((b) => new RegExp(`(^|[^A-Za-z.])${esc(b.symbol)}([^A-Za-z.]|$)`, "i").test(text));
 }
 
 /** First amount in the text, ignoring addresses. Understands "52.4M", "52,400,000", "5.24e+7", "52.4 million". */

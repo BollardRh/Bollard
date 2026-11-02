@@ -24,7 +24,7 @@ export async function sendTx(
   try {
     const { request } = await deps.publicClient.simulateContract({ ...call, account: deps.poster.account } as never);
     const hash = await deps.poster.writeContract(request as never);
-    const receipt = await deps.publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+    const receipt = await deps.publicClient.waitForTransactionReceipt({ hash, timeout: 25_000 });
     return receipt.status === "success" ? { ok: true, hash } : { ok: false, reason: `reverted in ${hash}` };
   } catch (e) {
     return { ok: false, reason: revertName(e) };

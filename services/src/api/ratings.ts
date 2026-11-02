@@ -1,3 +1,4 @@
+import { trustedAttesters } from "../chain/config.ts";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { getAddress, isAddress, type Address } from "viem";
 import { agents, ratings, runBundles } from "../db/schema.ts";
@@ -58,6 +59,11 @@ export function ratingView(
     usable,
     disputeDeadline: r.disputeDeadline?.toISOString() ?? null,
     attesters: r.attesters,
+    // null when no allowlist is configured; false when any signer is outside it
+    signersTrusted: (() => {
+      const t = trustedAttesters();
+      return t ? r.attesters.every((a) => t.has(a.toLowerCase())) : null;
+    })(),
     txHash: r.txHash,
     blockNumber: r.blockNumber.toString(),
     bundle: bundle ? { hash: bundle.bundleHash, url: bundle.publicUri } : null,
@@ -111,7 +117,7 @@ export async function searchAgents(deps: AppDeps, q: string) {
     ? sql`(a.owner = ${lc(query)} or a.agent_wallet = ${lc(query)} or a.agent_registry = ${lc(query)})`
     : /^\d+$/.test(query)
       ? sql`a.agent_id = ${query}`
-      : sql`(a.name operator(extensions.%) ${query} or a.name ilike ${`%${query}%`})`;
+      : sql`(a.name operator(extensions.%) ${query} or a.name ilike ${`%${query.replace(/[\\%_]/g, "\\$&")}%`})`;
   const order = isAddress(query) || /^\d+$/.test(query) ? sql`a.agent_id` : sql`extensions.similarity(a.name, ${query}) desc`;
   const rows = await deps.db.execute<{
     chain_id: number;

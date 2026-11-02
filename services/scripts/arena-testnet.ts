@@ -85,11 +85,13 @@ async function setup() {
     memo[`${h.key}AgentId`] = agentId;
     memo[`${h.key}ArenaId`] = arenaId.toString();
     console.log(`arena ${arenaId}: ${h.label}, house agent ${agentId}, canary ${canaryAddr}`);
-    rows.push(`(46630, ${agentId}, '${h.label.replace(/'/g, "''")}', 'builtin:${h.key}', '${DEFAULT_SYSTEM_PROMPT.replace(/'/g, "''")}')`);
+    rows.push(
+      `(46630, ${agentId}, '${h.label.replace(/'/g, "''")}', 'builtin:${h.key}', '${DEFAULT_SYSTEM_PROMPT.replace(/'/g, "''")}', '${String(process.env.POSTER_ADDRESS).toLowerCase()}', '${ops.address.toLowerCase()}')`,
+    );
   }
   mkdirSync(`${ROOT}.dev-nodes`, { recursive: true });
   writeFileSync(MEMO, JSON.stringify(memo, null, 2));
-  console.log(`\nregister the house agents with the engine:\ninsert into house_agents (chain_id, agent_id, label, endpoint, system_prompt) values\n  ${rows.join(",\n  ")}\non conflict do nothing;`);
+  console.log(`\nregister the house agents with the engine:\ninsert into house_agents (chain_id, agent_id, label, endpoint, system_prompt, agent_key, funder) values\n  ${rows.join(",\n  ")}\non conflict do nothing;`);
 }
 
 function attackerKey(): Hex {

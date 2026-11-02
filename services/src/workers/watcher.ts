@@ -1,7 +1,8 @@
-import { and, eq, gt, or, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, or, isNull, sql } from "drizzle-orm";
 import { getAddress, type Hex } from "viem";
 import { enclaveKeys, nodeRegistrations } from "../db/schema.ts";
 import { verifyRegistration } from "../attest/verify.ts";
+import { DcapUnavailableError } from "../attest/dcap.ts";
 import type { DstackEvent } from "../attest/rtmr.ts";
 import type { AppDeps } from "../api/context.ts";
 
@@ -22,9 +23,12 @@ export async function runWatcher(deps: AppDeps) {
         gt(enclaveKeys.activeAt, new Date(deps.now() - 86_400_000)),
       ),
     )
-    .limit(25);
+    .orderBy(asc(enclaveKeys.activeAt))
+    .limit(100);
 
   const results: { key: string; ok: boolean; reasons: string[] }[] = [];
+  const retry: string[] = [];
+  let checked = 0;
   for (const k of keys) {
     const [reg] = await deps.db.select().from(nodeRegistrations).where(eq(nodeRegistrations.key, k.key));
     let ok = false;
@@ -34,7 +38,11 @@ export async function runWatcher(deps: AppDeps) {
       // give the node until the window closes to say hello
       if (k.activeAt.getTime() - deps.now() > 3600_000) continue;
     } else {
-      const v = await verifyRegistration(
+      if (checked >= 25) break; // bounded work per tick; keys without a hello above cost nothing
+      checked++;
+      let v;
+      try {
+        v = await verifyRegistration(
         {
           quote: `0x${Buffer.from(k.rawQuote).toString("hex")}` as Hex,
           eventLog: reg.eventLog as DstackEvent[],
@@ -45,7 +53,12 @@ export async function runWatcher(deps: AppDeps) {
           registry: deps.chain.contracts.attesterRegistry,
         },
         deps.dcap,
-      );
+        );
+      } catch (e) {
+        if (!(e instanceof DcapUnavailableError)) throw e;
+        retry.push(k.key); // verifier outage: stay pending and check again next tick, never "fail"
+        continue;
+      }
       ok = v.ok && reg.composeHash === k.composeHash;
       reasons = v.reasons.concat(reg.composeHash === k.composeHash ? [] : ["hello compose hash differs from the registered one"]);
     }
@@ -61,5 +74,5 @@ export async function runWatcher(deps: AppDeps) {
     }
     results.push({ key: k.key, ok, reasons });
   }
-  return { checked: results };
+  return { checked: results, retry };
 }

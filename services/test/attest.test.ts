@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { bytesToHex, getAddress, hexToBytes, keccak256, toHex, type Hex } from "viem";
-import { DevDcapVerifier, PhalaCloudVerifier, type DcapVerifier } from "../src/attest/dcap.ts";
+import { DcapUnavailableError, DevDcapVerifier, PhalaCloudVerifier, type DcapVerifier } from "../src/attest/dcap.ts";
 import { DEV_OS_MEASUREMENT, devQuote, isDevQuote } from "../src/attest/devAttestor.ts";
 import { Enclave } from "../src/attest/enclave.ts";
 import { composeHashOf, replayRtmr3 } from "../src/attest/rtmr.ts";
@@ -120,7 +120,9 @@ describe("DCAP verifiers", () => {
     const q = hexToBytes(registration().quote as Hex);
     expect(await new PhalaCloudVerifier("https://x", fake({ quote: { verified: true } })).verify(q)).toBe(true);
     expect(await new PhalaCloudVerifier("https://x", fake({ quote: { verified: false } })).verify(q)).toBe(false);
-    expect(await new PhalaCloudVerifier("https://x", fake({}, 500)).verify(q)).toBe(false);
+    expect(await new PhalaCloudVerifier("https://x", fake({}, 400)).verify(q)).toBe(false);
+    // an outage is not a rejection: the watcher keeps the key pending and retries
+    await expect(new PhalaCloudVerifier("https://x", fake({}, 500)).verify(q)).rejects.toBeInstanceOf(DcapUnavailableError);
     expect(JSON.parse(calls[0]!).hex).toBe(bytesToHex(q).slice(2));
   });
 });

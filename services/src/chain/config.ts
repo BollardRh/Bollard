@@ -64,3 +64,13 @@ export const CHECK_CODES = [
   "UNTESTED_FAMILY",
   "SIGNER_SLASHED",
 ] as const;
+
+/**
+ * Optional allowlist of attester addresses (comma-separated TRUSTED_ATTESTERS). On testnet, bonding is open
+ * (test tokens mint freely) and dev quotes are allowed, so only these attesters get work and ratings signed
+ * by anyone else are shown as unverified. Unset: no filter.
+ */
+export function trustedAttesters(env: NodeJS.ProcessEnv = process.env): Set<string> | null {
+  const list = (env.TRUSTED_ATTESTERS ?? "").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
+  return list.length ? new Set(list) : null;
+}

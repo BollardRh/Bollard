@@ -114,6 +114,7 @@
   const ratingState = (r) => {
     if (r.status === "disputed") return pill("Disputed", "bad");
     if (r.status === "void") return pill("Void", "bad");
+    if (r.signersTrusted === false) return pill("Unverified signers", "bad");
     if (r.stale) return pill("Stale version", "warn");
     if (r.expired) return pill("Expired", "warn");
     return pill("Usable", "ok");
@@ -738,7 +739,7 @@
       const w = await loadWallet();
       if (!w.connected()) await w.connect({ chainId: cfg.chainId, network: cfg.network, rpcUrl: cfg.rpcUrl, explorer: cfg.explorer });
       const signature = await w.signMessage(cfg.messages.fixList.replace("{ratingId}", ratingId));
-      const f = await api.query("builder.fixList", { chainId: cfg.chainId, ratingId, signature });
+      const f = await api.mutate("builder.fixList", { chainId: cfg.chainId, ratingId, signature });
       box.innerHTML = f.failedCases.length
         ? `<div class="rows">${f.failedCases
             .map(

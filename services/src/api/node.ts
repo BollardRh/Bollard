@@ -1,4 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import { Hono, type Context } from "hono";
 import {
   getAddress,
@@ -39,6 +40,7 @@ export function createNodeHelpers(deps: AppDeps) {
       functionName: "isActiveKey",
       args: [getAddress(key)],
     })) as boolean;
+    if (cache.size > 5_000) cache.clear();
     cache.set(k, { v, until: deps.now() + 15_000 });
     return v;
   };
@@ -53,6 +55,16 @@ export function createNodeHelpers(deps: AppDeps) {
     );
   return { isActiveKey, attesterOf };
 }
+
+const HexStr = z.string().regex(/^0x[0-9a-fA-F]*$/);
+/** What a node publishes about itself. Sizes are capped: a dstack quote is ~5 KB and an event log a few dozen entries. */
+const Hello = z.object({
+  publicKey: HexStr.max(140),
+  quote: HexStr.max(16_384),
+  eventLog: z.array(z.record(z.unknown())).max(128),
+  composeHash: HexStr.length(66),
+  appCompose: z.string().max(65_536),
+});
 
 async function runJobOf(deps: AppDeps, req: typeof runRequests.$inferSelect): Promise<RunJob> {
   const next = await deps.publicClient.getBlock({ blockNumber: req.requestBlock + 1n });
@@ -90,19 +102,18 @@ export function nodeRoutes(deps: AppDeps) {
   app.post("/api/node/hello", async (c) => {
     const { res, body } = await auth(c, false);
     if (!res.ok) return reply(c, { error: res.reason }, res.status);
-    const b = JSON.parse(body) as {
-      attester: string;
-      publicKey: Hex;
-      quote: Hex;
-      eventLog: DstackEvent[];
-      composeHash: Hex;
-      appCompose: string;
-    };
+    const parsed = Hello.safeParse(JSON.parse(body));
+    if (!parsed.success) return reply(c, { error: "malformed hello" }, 400);
+    const b = parsed.data as unknown as { publicKey: Hex; quote: Hex; eventLog: DstackEvent[]; composeHash: Hex; appCompose: string };
+    if (JSON.stringify(b.eventLog).length > 131_072) return reply(c, { error: "event log too large" }, 400);
+    // only keys already registered on-chain may publish; the attester is whoever registered the key
+    const attester = await attesterOf(res.key);
+    if (/^0x0{40}$/.test(attester)) return reply(c, { error: "register the enclave key on-chain first" }, 403);
     if (lc(publicKeyToAddress(b.publicKey)) !== lc(res.key)) return reply(c, { error: "public key does not match the signing key" }, 400);
     if (composeHashOf(b.appCompose) !== lc(b.composeHash)) return reply(c, { error: "composeHash != SHA-256(appCompose)" }, 400);
     const row = {
       key: lc(res.key),
-      attester: lc(b.attester),
+      attester,
       publicKey: b.publicKey,
       composeHash: lc(b.composeHash),
       quote: b.quote,
@@ -125,7 +136,7 @@ export function nodeRoutes(deps: AppDeps) {
     const [cos] = await deps.db.execute<{ bundle_hash: string; chain_id: number; request_id: string }>(sql`
       select b.bundle_hash, b.chain_id, b.request_id::text from run_bundles b
       join run_requests r on r.chain_id = b.chain_id and r.request_id = b.request_id
-      where b.posted_tx is null and ${key} = any(r.assigned_cosigners)
+      where b.posted_tx is null and ${key} = any(r.assigned_cosigners) and b.lead_key = r.assigned_lead
         and not exists (select 1 from cosignatures s where s.bundle_hash = b.bundle_hash and s.enclave_key = ${key})
         and not exists (select 1 from cosign_refusals f where f.bundle_hash = b.bundle_hash and f.enclave_key = ${key})
       order by b.created_at limit 1`);
@@ -135,13 +146,14 @@ export function nodeRoutes(deps: AppDeps) {
         .select()
         .from(runRequests)
         .where(and(eq(runRequests.chainId, cos.chain_id), eq(runRequests.requestId, cos.request_id)));
-      if (raw && req) return reply(c, { job: { role: "cosign", job: await runJobOf(deps, req), signed: JSON.parse(raw) as SignedBundle } });
+      // co-signers recompute from the bundle; they never call the endpoint, so they do not get its run token
+      if (raw && req) return reply(c, { job: { role: "cosign", job: { ...(await runJobOf(deps, req)), runToken: "" }, signed: JSON.parse(raw) as SignedBundle } });
     }
 
     const [lead] = await deps.db.execute<{ chain_id: number; request_id: string }>(sql`
       select r.chain_id, r.request_id::text from run_requests r
       where r.status = 'running' and r.assigned_lead = ${key}
-        and not exists (select 1 from run_bundles b where b.chain_id = r.chain_id and b.request_id = r.request_id)
+        and not exists (select 1 from run_bundles b where b.chain_id = r.chain_id and b.request_id = r.request_id and b.lead_key = r.assigned_lead)
       order by r.created_at limit 1`);
     if (lead) {
       const [req] = await deps.db
@@ -181,10 +193,15 @@ export function nodeRoutes(deps: AppDeps) {
     if (digest !== report.digest || lc(await recoverAddress({ hash: digest, signature: report.signature })) !== key) return bad("bad report signature");
     const [corpus] = await deps.db.select().from(corpusVersions).where(eq(corpusVersions.root, lc(b.corpusRoot)));
     if (!corpus || corpus.retired || lc(corpus.holdoutCommit) !== lc(b.holdoutCommit)) return bad("corpus or holdout commitment not published");
+    if (lc(b.corpusRoot) !== lc(deps.corpus.root)) return bad("bundle was not run on the current corpus");
+    const [existing] = await deps.db
+      .select({ h: runBundles.bundleHash })
+      .from(runBundles)
+      .where(and(eq(runBundles.chainId, req.chainId), eq(runBundles.requestId, req.requestId), eq(runBundles.leadKey, key)));
+    if (existing) return reply(c, { error: "this lead already uploaded a bundle for the request" }, 409);
     const next = await deps.publicClient.getBlock({ blockNumber: req.requestBlock + 1n });
     if (seedKeyOf(BigInt(req.requestId), b.corpusRoot, next.hash!) !== b.seedKey) return bad("seed key not derived from the request");
 
-    await deps.storage.put("bundles", `${signed.bundleHash}.json`, jsonBig(signed));
     const attester = await attesterOf(res.key);
     await deps.db.transaction(async (tx) => {
       await tx
@@ -223,6 +240,8 @@ export function nodeRoutes(deps: AppDeps) {
         .values({ bundleHash: signed.bundleHash, chainId: b.report.chainId, enclaveKey: key, attester, digest, signature: report.signature })
         .onConflictDoNothing();
       await tx.update(runRequests).set({ updatedAt: new Date(deps.now()) }).where(and(eq(runRequests.chainId, req.chainId), eq(runRequests.requestId, req.requestId)));
+      // last, inside the transaction: if the upload fails, no row points at a missing bundle
+      await deps.storage.put("bundles", `${signed.bundleHash}.json`, jsonBig(signed));
     });
     return reply(c, { ok: true, bundleHash: signed.bundleHash });
   });
@@ -242,9 +261,10 @@ export function nodeRoutes(deps: AppDeps) {
     if (!req?.assignedCosigners?.includes(key)) return reply(c, { error: "not an assigned co-signer" }, 403);
 
     if (!result.ok) {
-      await deps.db.insert(cosignRefusals).values({ bundleHash: h, enclaveKey: key, problems: result.problems }).onConflictDoNothing();
+      const problems = (Array.isArray(result.problems) ? result.problems : []).slice(0, 20).map((p) => String(p).slice(0, 300));
+      await deps.db.insert(cosignRefusals).values({ bundleHash: h, enclaveKey: key, problems }).onConflictDoNothing();
       if (deps.telegram?.opsChatId) {
-        await deps.notify(deps.telegram.opsChatId, `Co-signer ${key} refused bundle ${h} (request ${b.requestId}): ${result.problems.slice(0, 5).join("; ")}`);
+        await deps.notify(deps.telegram.opsChatId, `Co-signer ${key} refused bundle ${h} (request ${b.requestId}): ${problems.slice(0, 5).join("; ")}`);
       }
       return reply(c, { ok: true, recorded: "refusal" });
     }

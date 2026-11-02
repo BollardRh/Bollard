@@ -91,9 +91,10 @@ maybe("arena engine end to end (local chain + Postgres)", () => {
     };
     // the house agent's key (in production it never leaves the house agent's CVM)
     setArenaAgent(chain.wallet(1) as unknown as Parameters<typeof setArenaAgent>[0]);
+    const served = { agentKey: chain.wallet(1).account!.address.toLowerCase(), funder: g.toLowerCase() };
     await deps.db.insert(schema.houseAgents).values([
-      { chainId: 31337, agentId: "7", label: "Naive demo agent", endpoint: "builtin:naive", systemPrompt: DEFAULT_SYSTEM_PROMPT },
-      { chainId: 31337, agentId: "8", label: "Hardened house agent", endpoint: "builtin:hardened", systemPrompt: DEFAULT_SYSTEM_PROMPT },
+      { chainId: 31337, agentId: "7", label: "Naive demo agent", endpoint: "builtin:naive", systemPrompt: DEFAULT_SYSTEM_PROMPT, ...served },
+      { chainId: 31337, agentId: "8", label: "Hardened house agent", endpoint: "builtin:hardened", systemPrompt: DEFAULT_SYSTEM_PROMPT, ...served },
     ]);
     api = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: createApp(deps).fetch });
     base = `http://127.0.0.1:${api.port}`;
@@ -191,6 +192,28 @@ maybe("arena engine end to end (local chain + Postgres)", () => {
     await chain.mine(1);
     expect((await call("arena.session", { chainId: 31337, arenaId: "2", attacker: a, salt: saltC }, true)).error).toContain("10 minutes");
   }, 60_000);
+
+  test("an arena opened by someone else, naming our house agent and key, is not served", async () => {
+    const stranger = chain.wallet(2);
+    const who = stranger.account!.address;
+    await chain.send(chain.wallet(0), addr.usdg, A.erc20.abi, "mint", [who, 10_000_000n]);
+    await chain.send(stranger, addr.usdg, A.erc20.abi, "approve", [addr.arena, 10_000_000n]);
+    await chain.send(stranger, addr.arena, A.arena.abi, "openArena", [addr.usdg, 1_000_000n, addr.usdg, 1_000_000n, chain.wallet(1).account!.address, 7n, 86_400n]);
+    await cron("indexer");
+    await chain.send(chain.wallet(0), addr.blrd, A.erc20.abi, "mint", [who, parseEther("10")]);
+    await chain.send(stranger, addr.blrd, A.erc20.abi, "approve", [addr.arena, parseEther("10")]);
+    const salt = keccak256(toHex("stranger-salt"));
+    await chain.send(stranger, addr.arena, A.arena.abi, "enterAttempt", [3n, keccak256(salt)]);
+    await chain.mine(1);
+    expect((await call("arena.session", { chainId: 31337, arenaId: "3", attacker: who, salt }, true)).error).toContain("not run by Bollard");
+  }, 60_000);
+
+  test("tRPC batches are charged per call and capped at 10", async () => {
+    const r = await fetch(`${base}/api/trpc/${Array(11).fill("arena.list").join(",")}?batch=1`);
+    expect(r.status).toBe(400);
+    const ok = await fetch(`${base}/api/trpc/${Array(3).fill("arena.wins").join(",")}?batch=1`);
+    expect(ok.status).toBe(200);
+  });
 
   test("an attempt has at most 30 messages", async () => {
     const b = chain.wallet(4).account!.address;

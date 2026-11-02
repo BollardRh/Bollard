@@ -13,6 +13,11 @@ import { sendTx } from "./tx.ts";
  */
 
 export const STALL_MS = 2 * 3600_000;
+/** A bundle that has not reached quorum this long after upload is treated as a stall (co-signers refused or vanished). */
+export const BUNDLE_STALL_MS = 6 * 3600_000;
+
+export { trustedAttesters } from "../chain/config.ts";
+import { trustedAttesters } from "../chain/config.ts";
 export const NODE_FRESH = "10 minutes";
 
 async function quorum(deps: AppDeps): Promise<number> {
@@ -26,20 +31,26 @@ interface Candidate {
   bond: bigint;
 }
 
-/** Stake-weighted, deterministic per request: the same inputs always give the same assignment. */
-export function pickStakeWeighted(cands: Candidate[], requestId: string, n: number): Candidate[] {
+/**
+ * Stake-weighted pick, deterministic per (request, round): the same inputs give the same assignment, and each
+ * reassignment round draws again. `seed` (the hash of the block after the request) makes the pick unknowable
+ * when the request is made. Keys in `notLead` can co-sign but are never picked as lead.
+ */
+export function pickStakeWeighted(cands: Candidate[], requestId: string, n: number, round = 0, seed: Hex = `0x${"00".repeat(32)}`, notLead: string[] = []): Candidate[] {
   const pool = [...cands].sort((a, b) => a.attester.localeCompare(b.attester));
   const out: Candidate[] = [];
   for (let i = 0; out.length < n && pool.length; i++) {
-    const total = pool.reduce((s, c) => s + (c.bond > 0n ? c.bond : 1n), 0n);
-    let r = BigInt(keccak256(encodePacked(["uint256", "uint256"], [BigInt(requestId), BigInt(i)]))) % total;
-    const idx = pool.findIndex((c) => {
+    const eligible = out.length === 0 ? pool.filter((c) => !notLead.includes(c.key)) : pool;
+    if (!eligible.length) break;
+    const total = eligible.reduce((s, c) => s + (c.bond > 0n ? c.bond : 1n), 0n);
+    let r = BigInt(keccak256(encodePacked(["bytes32", "uint256", "uint256", "uint256"], [seed, BigInt(requestId), BigInt(round), BigInt(i)]))) % total;
+    const chosen = eligible.find((c) => {
       const w = c.bond > 0n ? c.bond : 1n;
       if (r < w) return true;
       r -= w;
       return false;
-    });
-    out.push(pool.splice(idx, 1)[0]!);
+    })!;
+    out.push(pool.splice(pool.indexOf(chosen), 1)[0]!);
   }
   return out;
 }
@@ -51,12 +62,16 @@ async function candidates(deps: AppDeps): Promise<Candidate[]> {
     join attesters a on a.chain_id = k.chain_id and a.address = k.attester
     join node_registrations n on n.key = k.key
     where k.chain_id = ${deps.chain.chainId} and not k.revoked and k.challenger is null and k.active_at <= now()
-      and coalesce(k.watcher_verdict, 'pending') <> 'fail' and not a.jailed
+      and k.watcher_verdict = 'pass' and not a.jailed
       and n.last_seen > now() - ${NODE_FRESH}::interval
     order by k.attester, n.last_seen desc`);
   const { isActiveKey } = createNodeHelpers(deps);
+  const trusted = trustedAttesters();
   const out: Candidate[] = [];
-  for (const r of rows) if (await isActiveKey(getAddress(r.key))) out.push({ key: r.key, attester: r.attester, bond: BigInt(r.bond) });
+  for (const r of rows) {
+    if (trusted && !trusted.has(r.attester.toLowerCase())) continue;
+    if (await isActiveKey(getAddress(r.key))) out.push({ key: r.key, attester: r.attester, bond: BigInt(r.bond) });
+  }
   return out;
 }
 
@@ -76,9 +91,11 @@ export async function runCoordinator(deps: AppDeps) {
     const cands = await candidates(deps);
     for (const req of ready) {
       if (cands.length < q) break; // not enough distinct attesters online
-      const picked = pickStakeWeighted(cands, req.requestId, Math.min(cands.length, q + 1)); // lead + quorum co-signers (one spare)
       const next = await deps.publicClient.getBlock({ blockNumber: req.requestBlock + 1n }).catch(() => null);
       if (!next) continue; // the block that fixes the seeds is not mined yet
+      // lead + quorum co-signers (one spare); leads that already stalled on this request are not picked again
+      const picked = pickStakeWeighted(cands, req.requestId, Math.min(cands.length, q + 1), req.assignRound, next.hash!, req.stalledLeads ?? []);
+      if (picked.length < q) continue;
       const corpusRoot = deps.corpus.root;
       await deps.db
         .update(runRequests)
@@ -94,11 +111,19 @@ export async function runCoordinator(deps: AppDeps) {
     }
   }
 
-  // ------------------------------------------------------------ 2. reassign leads that stalled before uploading a bundle
+  // ------------------------------------------------------------ 2. reassign stalled runs
+  // A lead stalled if it uploaded nothing in STALL_MS, or its bundle has not reached quorum in BUNDLE_STALL_MS
+  // (co-signers refused it or went away). The lead is remembered so the next round picks someone else.
   const stalled = await deps.db.execute<{ request_id: string }>(sql`
-    update run_requests r set status = 'open', assigned_lead = null, assigned_cosigners = null, updated_at = now()
-    where r.chain_id = ${deps.chain.chainId} and r.status = 'running' and r.updated_at < ${new Date(deps.now() - STALL_MS).toISOString()}::timestamptz
-      and not exists (select 1 from run_bundles b where b.chain_id = r.chain_id and b.request_id = r.request_id)
+    update run_requests r set status = 'open', assigned_lead = null, assigned_cosigners = null, updated_at = now(),
+      assign_round = r.assign_round + 1, stalled_leads = array_append(r.stalled_leads, r.assigned_lead)
+    where r.chain_id = ${deps.chain.chainId} and r.status = 'running'
+      and (
+        (r.updated_at < ${new Date(deps.now() - STALL_MS).toISOString()}::timestamptz
+          and not exists (select 1 from run_bundles b where b.chain_id = r.chain_id and b.request_id = r.request_id and b.lead_key = r.assigned_lead))
+        or exists (select 1 from run_bundles b where b.chain_id = r.chain_id and b.request_id = r.request_id and b.lead_key = r.assigned_lead
+                    and b.posted_tx is null and b.created_at < ${new Date(deps.now() - BUNDLE_STALL_MS).toISOString()}::timestamptz)
+      )
     returning r.request_id::text`);
   for (const s of stalled) reassigned.push(s.request_id);
   if (stalled.length && deps.telegram?.opsChatId) {
@@ -109,12 +134,18 @@ export async function runCoordinator(deps: AppDeps) {
   const pending = await deps.db
     .select()
     .from(runBundles)
-    .where(and(eq(runBundles.chainId, deps.chain.chainId), isNull(runBundles.postedTx)));
+    .where(and(eq(runBundles.chainId, deps.chain.chainId), isNull(runBundles.postedTx), sql`${runBundles.createdAt} > now() - interval '14 days'`))
+    .orderBy(runBundles.createdAt)
+    .limit(20);
+  const { isActiveKey } = createNodeHelpers(deps);
   for (const b of pending) {
     const sigs = await deps.db.select().from(cosignatures).where(eq(cosignatures.bundleHash, b.bundleHash));
     const byAttester = new Map<string, (typeof sigs)[number]>();
+    // one signature per attester, lead first, and only keys that are active right now: postRating reverts
+    // the whole call if any submitted key is inactive, so a co-signer that revokes its key cannot block it
     for (const s of [...sigs].sort((x, y) => (x.enclaveKey === b.leadKey ? -1 : y.enclaveKey === b.leadKey ? 1 : 0))) {
-      if (s.digest === b.reportDigest && !byAttester.has(s.attester)) byAttester.set(s.attester, s);
+      if (s.digest !== b.reportDigest || byAttester.has(s.attester)) continue;
+      if (await isActiveKey(getAddress(s.enclaveKey))) byAttester.set(s.attester, s);
     }
     if (byAttester.size < q) continue;
 
@@ -149,7 +180,7 @@ export async function runCoordinator(deps: AppDeps) {
       issuedAt: BigInt(r.issuedAt!),
       expiresAt: BigInt(r.expiresAt!),
     };
-    const chosen = [...byAttester.values()].slice(0, q + 1);
+    const chosen = [...byAttester.values()].slice(0, q);
     const res = await sendTx(deps, {
       address: deps.chain.contracts.ratingRegistry,
       abi: ratingRegistryAbi,

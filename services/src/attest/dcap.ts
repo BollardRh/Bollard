@@ -16,6 +16,9 @@ export interface DcapVerifier {
   verify(quote: Uint8Array): Promise<boolean>;
 }
 
+/** The verifier could not give an answer (network error, 5xx, timeout). Retry later; it is not a rejection. */
+export class DcapUnavailableError extends Error {}
+
 export const PHALA_VERIFY_URL = "https://cloud-api.phala.com/api/v1/attestations/verify";
 
 export class PhalaCloudVerifier implements DcapVerifier {
@@ -26,19 +29,22 @@ export class PhalaCloudVerifier implements DcapVerifier {
   ) {}
 
   async verify(quote: Uint8Array): Promise<boolean> {
+    let r: Response;
     try {
-      const r = await this.fetchImpl(this.url, {
+      r = await this.fetchImpl(this.url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ hex: bytesToHex(quote).slice(2) }),
         signal: AbortSignal.timeout(20_000),
       });
-      if (!r.ok) return false;
-      const j = (await r.json()) as { quote?: { verified?: boolean } };
-      return j?.quote?.verified === true;
-    } catch {
-      return false;
+    } catch (e) {
+      throw new DcapUnavailableError(`Phala verifier unreachable: ${(e as Error).message}`);
     }
+    if (r.status >= 500 || r.status === 429) throw new DcapUnavailableError(`Phala verifier returned ${r.status}`);
+    if (!r.ok) return false;
+    const j = (await r.json().catch(() => null)) as { quote?: { verified?: boolean } } | null;
+    if (!j) throw new DcapUnavailableError("Phala verifier returned a malformed body");
+    return j.quote?.verified === true;
   }
 }
 

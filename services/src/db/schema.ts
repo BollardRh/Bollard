@@ -58,6 +58,8 @@ export const runRequests = pgTable(
     assignedCosigners: text("assigned_cosigners").array(),
     createdAt: ts("created_at").notNull().defaultNow(),
     runToken: text("run_token"),
+    assignRound: integer("assign_round").notNull().default(0),
+    stalledLeads: text("stalled_leads").array().notNull().default([]),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.requestId] })],
@@ -263,6 +265,8 @@ export const houseAgents = pgTable(
     label: text("label").notNull(),
     endpoint: text("endpoint").notNull(),
     systemPrompt: text("system_prompt").notNull(),
+    agentKey: text("agent_key"),
+    funder: text("funder"),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.agentId] })],
 );
@@ -279,7 +283,13 @@ export const arenaSessions = pgTable("arena_sessions", {
   messages: integer("messages").notNull().default(0),
   status: text("status", { enum: ["open", "won", "closed"] }).notNull().default("open"),
   winTx: text("win_tx"),
+  busyUntil: ts("busy_until"),
   createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const jobLocks = pgTable("job_locks", {
+  job: text("job").primaryKey(),
+  lockedUntil: ts("locked_until").notNull(),
 });
 
 export const apiKeys = pgTable("api_keys", {
