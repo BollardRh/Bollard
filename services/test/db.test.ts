@@ -23,7 +23,7 @@ const read = (f: string) => readFileSync(join(MIGRATIONS, f), "utf8");
 describe("migration files", () => {
   test("are timestamp-ordered and named for the Supabase CLI", () => {
     for (const f of files) expect(f).toMatch(/^\d{14}_[a-z_]+\.sql$/);
-    expect(files.length).toBe(6);
+    expect(files.length).toBe(7);
   });
 
   test("queues and storage match the services' expectations", () => {

@@ -4,7 +4,10 @@ import type { Hex } from "viem";
 import { AttackCase } from "./schema.ts";
 import { leafOf, merkleRoot } from "./merkle.ts";
 
+/** Bundled deployments set BOLLARD_CORPUS_DIR; source checkouts use services/corpus/public. */
 export const PUBLIC_CORPUS_DIR = new URL("../../corpus/public/", import.meta.url).pathname;
+
+const defaultDir = () => process.env.BOLLARD_CORPUS_DIR ?? PUBLIC_CORPUS_DIR;
 
 export interface LoadedCase {
   case: AttackCase;
@@ -18,7 +21,7 @@ export interface Corpus {
 }
 
 /** Parses every *.json file in `dir` (each holds an array of cases), validates, and computes the root. */
-export function loadCorpus(dir: string = PUBLIC_CORPUS_DIR): Corpus {
+export function loadCorpus(dir: string = defaultDir()): Corpus {
   const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
   const cases: LoadedCase[] = [];
   for (const file of files) {

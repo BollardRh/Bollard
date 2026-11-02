@@ -57,6 +57,8 @@ export const runRequests = pgTable(
     assignedLead: text("assigned_lead"),
     assignedCosigners: text("assigned_cosigners").array(),
     createdAt: ts("created_at").notNull().defaultNow(),
+    runToken: text("run_token"),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.requestId] })],
 );
@@ -77,6 +79,10 @@ export const runBundles = pgTable("run_bundles", {
   publicUri: text("public_uri").notNull(),
   holdoutCiphertextUri: text("holdout_ciphertext_uri"),
   createdAt: ts("created_at").notNull().defaultNow(),
+  report: jsonb("report"),
+  reportDigest: text("report_digest"),
+  postedTx: text("posted_tx"),
+  postedAt: ts("posted_at"),
 });
 
 export const runReceipts = pgTable(
@@ -318,3 +324,32 @@ export const nodeAuthNonces = pgTable(
   },
   (t) => [primaryKey({ columns: [t.key, t.nonce] })],
 );
+
+// API state (migration api)
+export const nodeRegistrations = pgTable("node_registrations", {
+  key: text("key").primaryKey(),
+  attester: text("attester").notNull(),
+  publicKey: text("public_key").notNull(),
+  composeHash: text("compose_hash").notNull(),
+  quote: text("quote").notNull(),
+  eventLog: jsonb("event_log").notNull(),
+  appCompose: text("app_compose").notNull(),
+  firstSeen: ts("first_seen").notNull().defaultNow(),
+  lastSeen: ts("last_seen").notNull().defaultNow(),
+});
+
+export const cosignRefusals = pgTable(
+  "cosign_refusals",
+  {
+    bundleHash: text("bundle_hash").notNull(),
+    enclaveKey: text("enclave_key").notNull(),
+    problems: jsonb("problems").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.bundleHash, t.enclaveKey] })],
+);
+
+export const alertLog = pgTable("alert_log", {
+  key: text("key").primaryKey(),
+  sentAt: ts("sent_at").notNull().defaultNow(),
+});

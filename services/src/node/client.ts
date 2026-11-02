@@ -42,8 +42,14 @@ export class NodeClient {
     return this.post<{ ok: boolean }>("/api/node/hello", a);
   }
 
-  claim() {
-    return this.post<{ job: NodeJob | null }>("/api/node/claim", {});
+  /** Big numbers arrive as decimal strings; revive them for the harness. */
+  async claim(): Promise<{ job: NodeJob | null }> {
+    const r = await this.post<{ job: NodeJob | null }>("/api/node/claim", {});
+    if (r.job) {
+      r.job.job.agentId = BigInt(r.job.job.agentId);
+      r.job.job.requestId = BigInt(r.job.job.requestId);
+    }
+    return r;
   }
 
   submitBundle(signed: SignedBundle, report: { digest: Hex; signature: Hex }) {
