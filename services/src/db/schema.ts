@@ -255,6 +255,33 @@ export const arenaMessages = pgTable("arena_messages", {
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
+export const houseAgents = pgTable(
+  "house_agents",
+  {
+    chainId: integer("chain_id").notNull(),
+    agentId: u256("agent_id").notNull(),
+    label: text("label").notNull(),
+    endpoint: text("endpoint").notNull(),
+    systemPrompt: text("system_prompt").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.agentId] })],
+);
+
+export const arenaSessions = pgTable("arena_sessions", {
+  sessionId: text("session_id").primaryKey(),
+  chainId: integer("chain_id").notNull(),
+  arenaId: u256("arena_id").notNull(),
+  attacker: text("attacker").notNull(),
+  openedBlock: bigint("opened_block", { mode: "bigint" }).notNull(),
+  expiresAt: ts("expires_at").notNull(),
+  commit: text("commit").notNull(),
+  transcriptHash: text("transcript_hash").notNull(),
+  messages: integer("messages").notNull().default(0),
+  status: text("status", { enum: ["open", "won", "closed"] }).notNull().default("open"),
+  winTx: text("win_tx"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
 export const apiKeys = pgTable("api_keys", {
   keyHash: text("key_hash").primaryKey(),
   plan: text("plan").notNull().default("free"),

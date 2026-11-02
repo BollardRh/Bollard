@@ -6,7 +6,9 @@ import {
   defineChain,
   encodeFunctionData,
   http,
+  keccak256,
   parseAbi,
+  toHex,
   type Address,
   type EIP1193Provider,
   type Hex,
@@ -137,6 +139,33 @@ export async function registerAgent(identity: Address, agentURI: string): Promis
 export async function mintTestTokens(token: Address, amount: bigint) {
   const data = encodeFunctionData({ abi: parseAbi(["function mint(address to, uint256 amount)"]), functionName: "mint", args: [account!, amount] });
   return send({ to: token, data });
+}
+
+/** Testnet only: tBLRD for arena attempt burns (same open mint as tUSDG). */
+export async function approve(token: Address, spender: Address, amount: bigint) {
+  const data = encodeFunctionData({ abi: parseAbi(["function approve(address spender, uint256 amount) returns (bool)"]), functionName: "approve", args: [spender, amount] });
+  return send({ to: token, data });
+}
+
+export async function allowance(token: Address, spender: Address): Promise<bigint> {
+  return (await pub().readContract({ address: token, abi: parseAbi(["function allowance(address,address) view returns (uint256)"]), functionName: "allowance", args: [account!, spender] })) as bigint;
+}
+
+/**
+ * Opens an arena attempt. The salt stays in this browser: commit = keccak256(salt) goes on-chain, and revealing
+ * the salt to the arena engine later proves this wallet opened the attempt.
+ */
+export async function enterAttempt(arena: Address, arenaId: string): Promise<{ salt: Hex; tx: Hex }> {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const salt = toHex(bytes);
+  const data = encodeFunctionData({
+    abi: parseAbi(["function enterAttempt(uint256 arenaId, bytes32 transcriptCommit)"]),
+    functionName: "enterAttempt",
+    args: [BigInt(arenaId), keccak256(salt)],
+  });
+  const receipt = await send({ to: arena, data });
+  return { salt, tx: receipt.transactionHash };
 }
 
 export async function tokenBalance(token: Address): Promise<bigint> {

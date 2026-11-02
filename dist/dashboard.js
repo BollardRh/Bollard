@@ -306,13 +306,230 @@
     );
   }
 
+  const fmt = (raw, decimals, symbol) => `${units(raw, decimals)} ${symbol}`;
+  const arenaState = (s) => pill(s === "open" ? "Open" : s === "won" ? "Won" : s === "ended" ? "Ended" : "Closed", s === "open" ? "ok" : s === "won" ? "warn" : "muted");
+
   async function arena() {
-    const list = await api.query("arena.list").catch(() => []);
+    const [list, wins] = await Promise.all([api.query("arena.list"), api.query("arena.wins").catch(() => [])]);
+    const winRows = await Promise.all(
+      wins.map(
+        async (w) =>
+          `<div class="row"><span class="row-main"><strong>Arena #${esc(w.arenaId)} · ${esc(fmt(w.paid, w.tokenDecimals, w.tokenSymbol))} paid</strong><small>Winner ${esc(short(w.winner))}${w.messages ? ` · ${esc(w.messages)} message${w.messages === 1 ? "" : "s"}` : ""}</small></span>${w.winTx ? await explorer("tx", w.winTx) : ""}</div>`,
+      ),
+    );
     return (
-      header("Arena", "Public challenges against house test agents.") +
-      `<section class="glass panel">${list.length ? `<div class="rows">${list.map((a) => `<div class="row"><span class="row-main"><strong>Arena #${esc(a.arenaId)}</strong><small>Bounty ${esc(units(a.bounty, 18))} tBLRD · ends ${esc(date(a.endsAt))}</small></span>${pill(a.status, a.status === "open" ? "ok" : "muted")}</div>`).join("")}</div>` : empty("No arenas open yet", "Live sessions, bounties and attempt histories arrive with the arena engine.")}</section>
+      header("Arena", "Talk a house test agent into paying you. A canary transfer to your attempt wallet pays the bounty on-chain.") +
+      `<section class="glass panel"><div class="panel-head"><div><h2>Arenas</h2><p>Each arena escrows a bounty. Winners get 90%; 10% goes to the fee router.</p></div></div>
+        ${list.length
+          ? `<div class="rows">${list
+              .map(
+                (a) => `<a class="row" href="#arena/${esc(a.arenaId)}"><span class="row-main"><strong>Arena #${esc(a.arenaId)}${a.houseAgent ? ` · ${esc(a.houseAgent)}` : ""}</strong><small>Bounty ${esc(fmt(a.bounty, a.tokenDecimals, a.tokenSymbol))} · ${a.status === "open" ? `ends ${esc(date(a.endsAt))}` : a.status === "won" ? "bounty paid" : `ended ${esc(date(a.endsAt))}`}</small></span>${arenaState(a.status)}</a>`,
+              )
+              .join("")}</div>`
+          : empty("No arenas open yet", "Arenas appear here once a funder opens one on-chain.")}
+      </section>
+      <section class="glass panel"><div class="panel-head"><div><h2>Wins</h2><p>Every win is settled on-chain and its chat becomes a corpus candidate.</p></div></div>
+        ${winRows.length ? `<div class="rows">${winRows.join("")}</div>` : empty("No wins yet", "The first successful attack will show up here.")}
+      </section>
       <section class="glass notice"><div><strong>From challenge to corpus</strong><p>Winning attacks become candidates for future test cases, subject to review.</p></div><a href="#families">Explore the corpus ↗</a></section>`
     );
+  }
+
+  async function arenaDetail(id) {
+    const [cfg, a] = await Promise.all([config(), api.query("arena.get", { arenaId: String(id) })]);
+    const back = '<a class="secondary" href="#arena">← All arenas</a>';
+    if (!a) return header(`Arena ${id}`, "Not found.", back) + `<section class="glass panel">${empty("No such arena", "It may not be indexed yet. Try again in a minute.")}</section>`;
+    const canary = a.canaryBalances.length ? a.canaryBalances.map((b) => esc(fmt(b.raw, b.decimals, b.symbol))).join(", ") : "empty";
+    const kv = (k, v) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`;
+    const open = a.status === "open" && new Date(a.endsAt) > new Date();
+    return (
+      header(`Arena ${a.arenaId}`, a.houseAgent ? `House agent: ${esc(a.houseAgent.label)}.` : "House agent not configured.", back) +
+      `<div class="arena-grid">
+        <section class="glass panel"><div class="panel-head"><div><h2>Bounty</h2><p>Paid automatically by ArenaBounty</p></div>${arenaState(open ? "open" : a.status === "open" ? "ended" : a.status)}</div>
+          <strong class="bounty">${esc(units(a.payout, a.tokenDecimals))} <small>${esc(a.tokenSymbol)} to the winner</small></strong>
+          <dl class="kv">
+            ${kv("Escrowed", esc(fmt(a.bounty, a.tokenDecimals, a.tokenSymbol)))}
+            ${kv("Canary wallet", `${await explorer("address", a.canary)} · ${canary}`)}
+            ${kv(a.status === "open" ? "Ends" : "Ended", esc(dateTime(a.endsAt)))}
+            ${kv("Attempt cost", `${esc(units(a.attemptBurn, 18))} tBLRD burned · lasts ${esc(Math.round(a.attemptWindowSec / 60))} min`)}
+            ${kv("Limits", `${esc(a.limits.messages)} messages per attempt · 1 attempt per wallet per ${esc(a.limits.cooldownMin)} min`)}
+            ${kv("Activity", `${esc(a.stats.attempts)} attempts · ${esc(a.stats.messages)} messages`)}
+            ${a.winner ? kv("Winner", await explorer("address", a.winner)) : ""}
+          </dl>
+          ${a.houseAgent ? `<details class="prompt"><summary>Published system prompt</summary><p>${esc(a.houseAgent.systemPrompt)}</p></details>` : ""}
+        </section>
+        <section class="glass panel"><div class="panel-head"><div><h2>Your attempt</h2><p>Win by getting the agent to send canary funds to your wallet.</p></div></div>
+          ${open
+            ? `<div class="step-row"><button class="primary" type="button" data-arena="connect">Connect wallet</button><span id="arena-wallet" class="step-status">Not connected</span></div>
+               <div class="step-row" id="attempt-row" hidden>${cfg.testnet ? `<button class="secondary" type="button" data-arena="faucet">Get test tBLRD</button>` : ""}<button class="primary" type="button" data-arena="attempt">Open attempt</button></div>
+               <div id="chat" class="chat" hidden>
+                 <div class="chat-head"><span id="chat-status" class="step-status"></span></div>
+                 <div id="chat-log" class="chat-log" aria-live="polite"></div>
+                 <form id="chat-form" class="chat-form"><label class="sr-only" for="chat-input">Message</label><textarea id="chat-input" rows="2" maxlength="2000" placeholder="Write to the house agent…"></textarea><button class="primary">Send</button></form>
+               </div>
+               <p id="arena-log" class="builder-log" role="status" aria-live="polite"></p>`
+            : empty(a.status === "won" ? "This arena was won" : "This arena is closed", a.status === "won" ? "The bounty has been paid. Look for an open arena." : "Attempts can no longer be opened.")}
+        </section>
+      </div>`
+    );
+  }
+
+  function bindArena(id) {
+    if (!document.querySelector("[data-arena]")) return;
+    const log = (msg, kind = "") => {
+      const el = document.querySelector("#arena-log");
+      if (!el) return;
+      el.className = `builder-log ${kind}`;
+      el.textContent = msg;
+    };
+    const saltKey = (cfg, who) => `bollard-arena:${cfg.chainId}:${id}:${who.toLowerCase()}`;
+    const readSalt = (cfg, who) => {
+      try {
+        return localStorage.getItem(saltKey(cfg, who));
+      } catch {
+        return null;
+      }
+    };
+    const writeSalt = (cfg, who, salt) => {
+      try {
+        localStorage.setItem(saltKey(cfg, who), salt);
+      } catch {
+        /* storage blocked: the session works for this visit only */
+      }
+    };
+    let salt = null;
+    let who = null;
+
+    const renderMessage = async (m) => {
+      const actions = await Promise.all(
+        (m.actions || []).map(async (x) =>
+          x.executed
+            ? `<li>${pill(x.won ? "Bounty paid" : x.counted ? "Counted" : "Sent", x.won ? "warn" : "ok")} ${esc(x.tool)} ${esc(x.args.amount ?? "")} ${esc(x.args.token ?? "")} → <span class="mono">${esc(short(String(x.args.to ?? "")))}</span> ${x.tx ? await explorer("tx", x.tx) : ""}</li>`
+            : `<li>${pill("Not executed", "muted")} ${esc(x.tool)}: ${esc(x.error || "")}</li>`,
+        ),
+      );
+      return `<div class="msg ${m.role === "attacker" ? "me" : "agent"}"><small>${m.role === "attacker" ? "You" : "House agent"}</small><p>${esc(m.content || "(no reply)")}</p>${actions.length ? `<ul class="msg-actions">${actions.join("")}</ul>` : ""}</div>`;
+    };
+    const setStatus = (s) => {
+      const won = s.status === "won";
+      document.querySelector("#chat-status").innerHTML = won
+        ? `${pill("You won", "warn")} ${s.winTx ? `<span class="mono">${esc(short(s.winTx))}</span>` : ""}`
+        : `${pill(`${s.messagesLeft} messages left`, s.messagesLeft ? "ok" : "bad")} attempt ends ${esc(dateTime(s.expiresAt))}`;
+      const form = document.querySelector("#chat-form");
+      form.hidden = won || !s.messagesLeft || new Date(s.expiresAt) <= new Date();
+    };
+    const showSession = async (s) => {
+      document.querySelector("#attempt-row").hidden = true;
+      document.querySelector("#chat").hidden = false;
+      const logEl = document.querySelector("#chat-log");
+      logEl.innerHTML = (await Promise.all(s.messages.map(renderMessage))).join("") || '<p class="fine-print">Session open. The house agent sees your messages as coming from an outside party.</p>';
+      logEl.scrollTop = logEl.scrollHeight;
+      setStatus(s);
+    };
+    const openSession = async (cfg, retries = 20) => {
+      for (let i = 0; ; i++) {
+        try {
+          const s = await api.mutate("arena.session", { chainId: cfg.chainId, arenaId: String(id), attacker: who, salt });
+          await showSession(s);
+          log("");
+          return s;
+        } catch (err) {
+          if (!/not settled yet/.test(err.message) || i >= retries) throw err;
+          log("Waiting for the attempt to settle…");
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+    };
+
+    const busy = async (btn, fn) => {
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Working…";
+      try {
+        await fn();
+      } catch (err) {
+        log(err?.shortMessage || err?.message || String(err), "bad");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    };
+
+    const actions = {
+      async connect() {
+        const cfg = await config();
+        const w = await loadWallet();
+        if (!w.hasWallet()) throw new Error("No browser wallet found. Install MetaMask or another EVM wallet to continue.");
+        who = await w.connect({ chainId: cfg.chainId, network: cfg.network, rpcUrl: cfg.rpcUrl, explorer: cfg.explorer });
+        document.querySelector("#arena-wallet").innerHTML = `${pill("Connected", "ok")} <span class="mono">${esc(short(who))}</span>`;
+        salt = readSalt(cfg, who);
+        if (salt) {
+          try {
+            await openSession(cfg, 0);
+            return;
+          } catch (err) {
+            log(`${err.message}. Open a new attempt to play again.`);
+          }
+        }
+        document.querySelector("#attempt-row").hidden = false;
+      },
+      async faucet() {
+        const a = await api.query("arena.get", { arenaId: String(id) });
+        const w = await loadWallet();
+        await w.mintTestTokens(a.blrd, BigInt(a.attemptBurn) * 5n);
+        log(`Minted test tBLRD. Balance: ${units(String(await w.tokenBalance(a.blrd)), 18)}.`, "ok");
+      },
+      async attempt() {
+        const cfg = await config();
+        const a = await api.query("arena.get", { arenaId: String(id) });
+        const w = await loadWallet();
+        const burn = BigInt(a.attemptBurn);
+        if (burn > 0n) {
+          if ((await w.tokenBalance(a.blrd)) < burn) throw new Error(`You need ${units(a.attemptBurn, 18)} tBLRD to open an attempt.`);
+          if ((await w.allowance(a.blrd, cfg.contracts.arenaBounty)) < burn) {
+            log("Approve the tBLRD burn in your wallet…");
+            await w.approve(a.blrd, cfg.contracts.arenaBounty, burn);
+          }
+        }
+        log("Confirm the attempt in your wallet…");
+        const r = await w.enterAttempt(cfg.contracts.arenaBounty, String(id));
+        salt = r.salt;
+        writeSalt(cfg, who, salt);
+        await openSession(cfg);
+      },
+    };
+
+    document.querySelector(".arena-grid").onclick = (e) => {
+      const btn = e.target.closest("button[data-arena]");
+      if (btn) busy(btn, actions[btn.dataset.arena]);
+    };
+    const form = document.querySelector("#chat-form");
+    const input = document.querySelector("#chat-input");
+    input.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const content = input.value.trim();
+      if (!content) return;
+      const btn = form.querySelector("button");
+      const logEl = document.querySelector("#chat-log");
+      await busy(btn, async () => {
+        const cfg = await config();
+        logEl.insertAdjacentHTML("beforeend", await renderMessage({ role: "attacker", content }));
+        input.value = "";
+        logEl.scrollTop = logEl.scrollHeight;
+        const r = await api.mutate("arena.message", { chainId: cfg.chainId, arenaId: String(id), attacker: who, salt, content });
+        logEl.insertAdjacentHTML("beforeend", await renderMessage({ role: "agent", content: r.reply, actions: r.actions }));
+        logEl.scrollTop = logEl.scrollHeight;
+        const s = await api.mutate("arena.session", { chainId: cfg.chainId, arenaId: String(id), attacker: who, salt, resume: true });
+        setStatus(s);
+        if (r.won) log("The bounty was paid to your wallet.", "ok");
+      });
+    };
   }
 
   // ------------------------------------------------------------------ builder flow
@@ -548,7 +765,7 @@
       if (active) el.setAttribute("aria-current", "page");
       else el.removeAttribute("aria-current");
     });
-    document.title = `${route === "agent" ? `Agent ${params[1] || ""}` : TITLES[route]} — Bollard`;
+    document.title = `${route === "agent" ? `Agent ${params[1] || ""}` : route === "arena" && params[0] ? `Arena ${params[0]}` : TITLES[route]} — Bollard`;
     clearTimeout(trackTimer);
 
     const seq = ++renderSeq;
@@ -561,12 +778,14 @@
         : route === "families" ? await families()
         : route === "builders" ? await builders()
         : route === "nodes" ? await nodes()
+        : params[0] ? await arenaDetail(params[0])
         : await arena();
       if (seq !== renderSeq) return;
       view.innerHTML = html;
       if (route === "lookup") bindLookup();
       if (route === "agent") bindAgent(params[0] || "46630", params[1] || "");
       if (route === "families") bindFamilies();
+      if (route === "arena" && params[0]) bindArena(params[0]);
       if (route === "builders") {
         bindBuilders();
         const rid = draft.read().requestId;

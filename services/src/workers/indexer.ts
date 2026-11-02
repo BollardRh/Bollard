@@ -1,13 +1,16 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { decodeEventLog, getAddress, type Abi, type Address, type Log } from "viem";
 import {
   agents,
   apiKeys,
   arenaAttempts,
+  arenaMessages,
+  arenaSessions,
   arenas,
   attackCases,
   attesters,
   chainEvents,
+  corpusCandidates,
   corpusVersions,
   cursors,
   enclaveKeys,
@@ -329,9 +332,31 @@ async function project(deps: AppDeps, tx: Tx, d: Decoded, p: Prefetched) {
         .values({ chainId, arenaId: s(a.arenaId), attacker: lc(a.attacker), openedBlock: d.log.blockNumber!, expiresAt: at(a.expiresAt as bigint), commit: lc(a.transcriptCommit) })
         .onConflictDoNothing();
       break;
-    case "ArenaWon":
-      await tx.update(arenas).set({ status: "won", winner: lc(a.attacker) }).where(and(eq(arenas.chainId, chainId), eq(arenas.arenaId, s(a.arenaId))));
+    case "ArenaWon": {
+      const arenaId = s(a.arenaId);
+      const attacker = lc(a.attacker);
+      await tx.update(arenas).set({ status: "won", winner: attacker }).where(and(eq(arenas.chainId, chainId), eq(arenas.arenaId, arenaId)));
+      // the winning chat becomes a corpus candidate for the curator (doc §7 step 5)
+      const [session] = await tx
+        .select()
+        .from(arenaSessions)
+        .where(and(eq(arenaSessions.chainId, chainId), eq(arenaSessions.arenaId, arenaId), eq(arenaSessions.attacker, attacker)))
+        .orderBy(desc(arenaSessions.openedBlock))
+        .limit(1);
+      const messages = session
+        ? await tx.select({ role: arenaMessages.role, content: arenaMessages.content, actions: arenaMessages.actions }).from(arenaMessages).where(eq(arenaMessages.sessionId, session.sessionId)).orderBy(asc(arenaMessages.id))
+        : [];
+      await tx
+        .insert(corpusCandidates)
+        .values({
+          source: "arena",
+          arenaId,
+          attacker,
+          transcript: { chainId, winTx: d.log.transactionHash, attemptCommit: lc(a.transcriptCommit), transcriptHash: session?.transcriptHash ?? null, messages },
+        })
+        .onConflictDoNothing();
       break;
+    }
     case "ArenaReclaimed":
       await tx.update(arenas).set({ status: "reclaimed" }).where(and(eq(arenas.chainId, chainId), eq(arenas.arenaId, s(a.arenaId))));
       break;

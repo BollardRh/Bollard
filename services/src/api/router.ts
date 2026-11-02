@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { AppDeps } from "./context.ts";
 import { checkOnChain, latestRating, ratingHistory, searchAgents } from "./ratings.ts";
 import { fixList, requestCalldata, runStatus, setEndpoint, versionHash } from "./builder.ts";
-import { arenaList, corpusVersionList, families, nodeKey, nodeList } from "./reads.ts";
+import { corpusVersionList, families, nodeKey, nodeList } from "./reads.ts";
+import { arenaDetails, arenaOverview, arenaWins, getSession, openSession, sendMessage } from "../arena/engine.ts";
 
 /** tRPC v11 router (backend doc §8). All big numbers travel as decimal strings. */
 
@@ -14,6 +15,7 @@ const Hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/) as unknown as z.ZodType<`0
 const Sig = z.string().regex(/^0x[0-9a-fA-F]{130}$/) as unknown as z.ZodType<`0x${string}`>;
 const Uint = z.union([z.string().regex(/^\d{1,78}$/), z.number().int().nonnegative()]).transform(String);
 const AgentRef = z.object({ chainId: z.number().int(), agentRegistry: Addr, agentId: Uint });
+const ArenaSession = z.object({ chainId: z.number().int(), arenaId: Uint, attacker: Addr, salt: Hex32 });
 
 export const appRouter = t.router({
   rating: t.router({
@@ -42,7 +44,16 @@ export const appRouter = t.router({
       .query(({ input, ctx }) => fixList(ctx.deps, input)), // owner-signed
   }),
   arena: t.router({
-    list: t.procedure.query(({ ctx }) => arenaList(ctx.deps)),
+    list: t.procedure.query(({ ctx }) => arenaOverview(ctx.deps)),
+    get: t.procedure.input(z.object({ arenaId: Uint })).query(({ input, ctx }) => arenaDetails(ctx.deps, input.arenaId)),
+    wins: t.procedure.query(({ ctx }) => arenaWins(ctx.deps)),
+    // the salt behind the attempt commit authenticates the attacker, so it travels in POST bodies only
+    session: t.procedure.input(ArenaSession.extend({ resume: z.boolean().default(false) })).mutation(({ input, ctx }) =>
+      input.resume ? getSession(ctx.deps, input) : openSession(ctx.deps, input),
+    ),
+    message: t.procedure
+      .input(ArenaSession.extend({ content: z.string().min(1).max(2000) }))
+      .mutation(({ input, ctx }) => sendMessage(ctx.deps, input)),
   }),
   corpus: t.router({
     families: t.procedure.query(({ ctx }) => families(ctx.deps)),

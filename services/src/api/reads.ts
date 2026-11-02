@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { arenas, attesters, corpusVersions, enclaveKeys, nodeRegistrations } from "../db/schema.ts";
+import { attesters, corpusVersions, enclaveKeys, nodeRegistrations } from "../db/schema.ts";
 import { FAMILY_PREFIX, FAMILY_TITLES, isCritical } from "../corpus/families.ts";
 import type { AppDeps } from "./context.ts";
 import { endpointMessage, fixListMessage, runFee } from "./builder.ts";
@@ -106,11 +106,6 @@ export async function nodeKey(deps: AppDeps, key: string) {
   if (!k) return null;
   const { rawQuote, ...rest } = k;
   return { ...rest, rawQuote: `0x${Buffer.from(rawQuote).toString("hex")}`, activeAt: k.activeAt.toISOString() };
-}
-
-export async function arenaList(deps: AppDeps) {
-  const rows = await deps.db.select().from(arenas).where(eq(arenas.chainId, deps.chain.chainId)).orderBy(desc(arenas.endsAt)).limit(50);
-  return rows.map((a) => ({ ...a, endsAt: a.endsAt.toISOString() }));
 }
 
 /** Latest posted ratings for the overview activity list. */
