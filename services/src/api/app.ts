@@ -8,7 +8,7 @@ import type { AppDeps } from "./context.ts";
 import { appRouter } from "./router.ts";
 import { rateLimit } from "./rateLimit.ts";
 import { checkOnChain, latestRating, searchAgents } from "./ratings.ts";
-import { config, stats } from "./reads.ts";
+import { config, recentRatings, stats } from "./reads.ts";
 import { nodeRoutes } from "./node.ts";
 import { createBot } from "./bot.ts";
 import { mockAgentApp } from "../mock-agents/server.ts";
@@ -62,6 +62,7 @@ export function createApp(deps: AppDeps) {
   app.get("/api/health", (c) => c.json({ ok: true, chainId: deps.chain.chainId }));
   app.get("/api/v1/config", async (c) => c.json(await config(deps)));
   app.get("/api/v1/stats", async (c) => c.json(await stats(deps)));
+  app.get("/api/v1/recent", async (c) => c.json(await recentRatings(deps)));
 
   // ---------------------------------------------------------------- REST (doc §8)
   app.use("/v1/*", rateLimit(deps));

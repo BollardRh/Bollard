@@ -1,0 +1,75 @@
+/* Live dashboard pieces (ratings, agents, nodes, builder flow). Matches the dark-glass look of dashboard.css. */
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:0;overflow-wrap:anywhere}
+a.mono{text-decoration:underline;text-decoration-color:rgba(255,255,255,.35);text-underline-offset:3px}
+.loading{padding:60px 0;text-align:center;font-size:12px;color:rgba(255,255,255,.75)}
+.error-box{padding:16px 18px;border-radius:14px;border:1px solid rgba(255,170,150,.45);background:rgba(120,40,25,.28)}
+.error-box strong{font-size:12px}.error-box p{margin-top:6px!important;overflow-wrap:anywhere}
+
+.pill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:6px 10px;border-radius:99px;font-size:10px;font-weight:700;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.14);color:#fff}
+.pill:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.85}
+.pill.ok{background:rgba(70,160,110,.28);border-color:rgba(150,230,180,.4);color:#d8ffe6}
+.pill.warn{background:rgba(200,150,40,.26);border-color:rgba(255,215,130,.42);color:#ffeec4}
+.pill.bad{background:rgba(190,70,50,.32);border-color:rgba(255,160,140,.45);color:#ffd9d0}
+.pill.muted{color:rgba(255,255,255,.82)}
+
+.rows{display:grid;gap:8px;margin-top:20px}
+.row{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid rgba(255,255,255,.22);border-radius:14px;background:rgba(32,44,51,.22);transition:background .2s ease}
+a.row:hover{background:rgba(255,255,255,.12)}
+.row-main{flex:1;min-width:0;display:grid;gap:4px}
+.row-main strong{font-size:12px}.row-main small{font-size:11px;color:rgba(255,255,255,.75);overflow-wrap:anywhere}
+.row.fix{align-items:start}.row-main .expect{color:#ffe1d6}
+
+.grade-badge{display:inline-flex;align-items:baseline;justify-content:center;gap:1px;flex:0 0 auto;min-width:52px;padding:10px 12px;border-radius:13px;font-weight:700;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3)}
+.grade-badge b{font-size:22px;letter-spacing:-.04em}.grade-badge small{font-size:10px;opacity:.75}
+.grade-badge.sm{min-width:44px;padding:7px 9px;border-radius:11px}.grade-badge.sm b{font-size:17px}
+.grade-badge.lg{min-width:110px;padding:18px 20px;border-radius:20px}.grade-badge.lg b{font-size:56px;line-height:1}.grade-badge.lg small{font-size:14px}
+.grade-badge.g5,.grade-badge.g4{background:rgba(70,160,110,.32);border-color:rgba(150,230,180,.45)}
+.grade-badge.g3{background:rgba(200,150,40,.3);border-color:rgba(255,215,130,.45)}
+.grade-badge.g2,.grade-badge.g1{background:rgba(190,70,50,.34);border-color:rgba(255,160,140,.45)}
+.grade-badge.none{color:rgba(255,255,255,.6)}
+
+.agent-grid{display:grid;grid-template-columns:minmax(260px,1fr) 2fr;gap:14px}
+.grade-panel{display:flex;flex-direction:column;justify-content:center;gap:20px}
+.score{display:block;font-size:40px;font-weight:500;letter-spacing:-.05em}.score small{font-size:14px;opacity:.7}
+.state{display:flex;flex-direction:column;align-items:start;gap:8px}.state small{font-size:11px;color:rgba(255,255,255,.75)}
+.fam-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}
+.fam{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(32,44,51,.2)}
+.fam>span{font-size:10px;font-weight:700;color:#ffd1c3}.fam strong{flex:1;font-size:12px}.fam em{font-style:normal;font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+.fam.failed{border-color:rgba(255,160,140,.45);background:rgba(150,50,35,.25)}
+.fam.untested{opacity:.7}
+
+.kv{display:grid;gap:0;margin:16px 0 0}
+.kv>div{display:grid;grid-template-columns:150px 1fr;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.14);align-items:center}
+.kv dt{font-size:11px;color:rgba(255,255,255,.72)}.kv dd{margin:0;font-size:12px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;min-width:0}
+#gate-out{display:inline-flex;align-items:center;gap:8px;color:#fff!important}
+
+.node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.node-card h2{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.key-list{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:8px}
+.key-list li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:rgba(32,44,51,.22);border:1px solid rgba(255,255,255,.18);font-size:12px}
+.key-list small{flex-basis:100%;font-size:11px;color:rgba(255,255,255,.72)}
+
+.steps{display:grid;gap:12px;margin-top:22px}
+.step{margin:0;padding:16px 16px 18px;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:rgba(32,44,51,.18);min-width:0}
+.step legend{padding:0 6px;font-size:12px;font-weight:700}.step legend span{color:#ffd1c3;font-size:10px;margin-right:6px}
+.step .form-grid{margin-top:10px}
+.step-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:6px}
+.step-status{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.85)}
+.primary:disabled,.secondary:disabled{opacity:.6;cursor:progress}
+.builder-log{min-height:18px;margin:4px 2px 0!important;font-size:12px!important;color:rgba(255,255,255,.85)!important;overflow-wrap:anywhere}
+.builder-log.ok{color:#d8ffe6!important}.builder-log.bad{color:#ffd0c4!important}
+.token{display:grid;grid-template-columns:1fr auto;gap:8px 10px;align-items:center;margin-top:14px;padding:12px;border-radius:12px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.2)}
+.token small{grid-column:1/-1;font-size:9px;letter-spacing:.1em;font-weight:700;color:rgba(255,255,255,.72)}
+.token code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;overflow-wrap:anywhere}
+#fix-box .rows{margin-top:12px}
+
+@media(max-width:1000px){.agent-grid{grid-template-columns:1fr}.grade-panel{flex-direction:row;flex-wrap:wrap;align-items:center}}
+@media(max-width:650px){
+  .fam-grid{grid-template-columns:1fr}
+  .kv>div{grid-template-columns:1fr;gap:4px}
+  .node-grid{grid-template-columns:1fr}
+  .row{flex-wrap:wrap}.row .pill{margin-left:auto}
+  .grade-badge.lg{min-width:90px;padding:14px 16px}.grade-badge.lg b{font-size:44px}
+  .token{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){.row{transition:none}}

@@ -2,8 +2,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { arenas, attesters, corpusVersions, enclaveKeys, nodeRegistrations } from "../db/schema.ts";
 import { FAMILY_PREFIX, FAMILY_TITLES, isCritical } from "../corpus/families.ts";
 import type { AppDeps } from "./context.ts";
-import { runFee } from "./builder.ts";
-import { lc } from "./ratings.ts";
+import { endpointMessage, fixListMessage, runFee } from "./builder.ts";
+import { lc, ratingById } from "./ratings.ts";
+import { ratings } from "../db/schema.ts";
 
 /** Small read models for the dashboard: config, stats, corpus, nodes, arenas. */
 
@@ -19,7 +20,13 @@ export async function config(deps: AppDeps) {
     network: deps.chain.name,
     testnet: deps.chain.chainId === 46630,
     explorer: deps.chain.explorer,
+    rpcUrl: deps.chain.rpcUrl,
     contracts: deps.chain.contracts,
+    // exact texts builders sign; the dashboard fills the {placeholders}
+    messages: {
+      endpoint: endpointMessage(deps.chain.chainId, "{requestId}", "{endpoint}"),
+      fixList: fixListMessage(deps.chain.chainId, "{ratingId}"),
+    },
     runFee: fee,
     feeDecimals: 6,
     families: families(deps),
@@ -104,4 +111,20 @@ export async function nodeKey(deps: AppDeps, key: string) {
 export async function arenaList(deps: AppDeps) {
   const rows = await deps.db.select().from(arenas).where(eq(arenas.chainId, deps.chain.chainId)).orderBy(desc(arenas.endsAt)).limit(50);
   return rows.map((a) => ({ ...a, endsAt: a.endsAt.toISOString() }));
+}
+
+/** Latest posted ratings for the overview activity list. */
+export async function recentRatings(deps: AppDeps, limit = 10) {
+  const rows = await deps.db
+    .select({ ratingId: ratings.ratingId })
+    .from(ratings)
+    .where(eq(ratings.chainId, deps.chain.chainId))
+    .orderBy(desc(ratings.blockNumber))
+    .limit(limit);
+  const out = [];
+  for (const r of rows) {
+    const v = await ratingById(deps, deps.chain.chainId, r.ratingId);
+    if (v) out.push(v);
+  }
+  return out;
 }
