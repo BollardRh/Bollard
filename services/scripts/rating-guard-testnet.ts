@@ -7,7 +7,7 @@
  *
  * GOOD_AGENT's ERC-8004 wallet must be the OPS address and LOW_AGENT's the POSTER address (agentWallet
  * defaults to the registering owner). Steps, all from the Safe (OPS is its only owner):
- *   1. create the Safe (once; remembered in .dev-nodes/safe.json)
+ *   1. create the Safe (once; remembered in .dev-nodes/guard.json)
  *   2. one MultiSend batch, before the guard is active: enable the AllowanceModule, guard.configure(1, 0),
  *      bind both delegates to their agents, enable the guard as a module, setGuard(guard)
  *   3. addDelegate(LOW wallet): passes the low floor (grade >= 1)
@@ -158,9 +158,9 @@ for (const [id, want] of [[GOOD_AGENT, GOOD], [LOW_AGENT, LOW]] as const) {
 console.log(`agent ${GOOD_AGENT} (wallet ${GOOD}): grade>=3 + critical -> ${await rating(GOOD_AGENT, 3, CRITICAL)}`);
 console.log(`agent ${LOW_AGENT} (wallet ${LOW}): grade>=1 -> ${await rating(LOW_AGENT, 1, 0)}, grade>=3 + critical -> ${await rating(LOW_AGENT, 3, CRITICAL)}`);
 
-const memoPath = `${ROOT}.dev-nodes/safe.json`;
-const memo = existsSync(memoPath) ? (JSON.parse(readFileSync(memoPath, "utf8")) as { safe?: Address }) : {};
-let safe = memo.safe;
+const memoPath = `${ROOT}.dev-nodes/guard.json`;
+const memo = existsSync(memoPath) ? (JSON.parse(readFileSync(memoPath, "utf8")) as { multisig?: Address }) : {};
+let safe = memo.multisig;
 if (!safe) {
   step("1. create the Safe (owner OPS, threshold 1)");
   const init = encodeFunctionData({
@@ -173,7 +173,7 @@ if (!safe) {
   await pub.waitForTransactionReceipt({ hash });
   safe = result;
   mkdirSync(`${ROOT}.dev-nodes`, { recursive: true });
-  writeFileSync(memoPath, JSON.stringify({ safe }, null, 2));
+  writeFileSync(memoPath, JSON.stringify({ multisig: safe }, null, 2));
   console.log(`  ok   Safe ${safe}  ${explorer(hash)}`);
 } else {
   console.log(`\nSafe ${safe} (from ${memoPath})`);
