@@ -1,4 +1,4 @@
-import { Bot } from "grammy";
+import { Bot } from "grammy/web";
 import type { UserFromGetMe } from "grammy/types";
 import { and, eq } from "drizzle-orm";
 import { watches } from "../db/schema.ts";

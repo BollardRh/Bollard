@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { webhookCallback } from "grammy";
+import { webhookCallback } from "grammy/web"; // web build: native fetch; the node build's node-fetch breaks once bundled
 import type { AppDeps } from "./context.ts";
 import { appRouter } from "./router.ts";
 import { rateLimit, trpcCalls } from "./rateLimit.ts";
