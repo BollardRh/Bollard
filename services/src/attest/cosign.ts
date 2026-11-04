@@ -13,16 +13,20 @@ import {
 } from "../harness/bundle.ts";
 import { seedKeyOf } from "../harness/rng.ts";
 import { runRequest, type Session } from "../harness/runner.ts";
+import { checkCosignJob, checkLeadJob, JobRefused, type NodeChain } from "../node/jobCheck.ts";
 import type { Enclave } from "./enclave.ts";
 import { tlsFingerprint } from "./tls.ts";
 
 /**
  * Lead / co-sign protocol (backend doc §5.7).
  *   1. The coordinator assigns a lead and >= 1 co-signer from different attesters.
- *   2. The lead runs all cases x seeds, builds the bundle, signs bundleHash with its enclave key, seals the
- *      holdout part to each co-signer's enclave key, and signs the EIP-712 report.
- *   3. Each co-signer checks the lead's key is active, replays everything, and signs the same report only on
- *      an exact match. It never re-queries the agent.
+ *   2. The lead checks the job against its own pinned view of the chain (node/jobCheck.ts: pinned chain and
+ *      registry, open request with the same subject, the request's next-block hash, genuine active co-signers
+ *      from other attesters), then runs all cases x seeds, builds the bundle, signs bundleHash with its enclave
+ *      key, seals the holdout part to each co-signer's enclave key, and signs the EIP-712 report.
+ *   3. Each co-signer checks the same chain facts, the seed key and corpus root, and that the lead's key is
+ *      active under another attester, replays everything, and signs the same report only on an exact match.
+ *      It never re-queries the agent.
  *   4. The coordinator posts postRating(report, keys, sigs).
  */
 
@@ -56,9 +60,10 @@ export async function signReport(b: RunBundle, enclave: Enclave): Promise<{ dige
   return { digest, signature: await enclave.signDigest(digest) };
 }
 
-/** Lead side: run, bundle, seal, sign. */
+/** Lead side: check the job on-chain, run, bundle, seal, sign. Throws JobRefused before running on any mismatch. */
 export async function leadRun(opts: {
   job: RunJob;
+  chain: NodeChain;
   publicCases: readonly AttackCase[];
   holdout?: HoldoutSet;
   corpusRoot: Hex;
@@ -71,6 +76,8 @@ export async function leadRun(opts: {
   now?: number;
 }): Promise<{ signed: SignedBundle; report: { digest: Hex; signature: Hex } }> {
   const { job } = opts;
+  const refused = await checkLeadJob(opts.chain, { job, corpusRoot: opts.corpusRoot, me: opts.enclave.address, cosigners: opts.cosigners });
+  if (refused.length) throw new JobRefused(refused);
   const seeds = opts.seeds ?? LAUNCH_PARAMS.minSeeds;
   const seedKey = seedKeyOf(job.requestId, opts.corpusRoot, job.requestNextBlockHash);
   const runId = keccak256(`0x${job.requestId.toString(16).padStart(64, "0")}${seedKey.slice(2)}`);
@@ -115,18 +122,19 @@ export type CosignResult = { ok: true; digest: Hex; signature: Hex } | { ok: fal
 
 /** Co-signer side: verify everything, then sign the identical EIP-712 report. */
 export async function cosign(opts: {
+  job: RunJob;
   signed: SignedBundle;
   publicCases: readonly AttackCase[];
   holdout?: HoldoutSet;
   me: Enclave;
-  isActiveKey(key: Address): Promise<boolean>;
+  chain: NodeChain;
   now?: number;
 }): Promise<CosignResult> {
   const { signed, me } = opts;
   const b = signed.bundle;
   const problems: string[] = [];
 
-  // 1. the bundle is exactly what the lead signed, and the lead is an active, different enclave key
+  // 1. the bundle is exactly what the lead signed, by a different enclave key
   if (bundleHash(b) !== signed.bundleHash) problems.push("bundle hash mismatch");
   let lead: Address | undefined;
   try {
@@ -136,10 +144,14 @@ export async function cosign(opts: {
   }
   if (lead && getAddress(lead) !== getAddress(b.attestation.leadKey)) problems.push("lead signature does not match leadKey");
   if (getAddress(b.attestation.leadKey) === getAddress(me.address)) problems.push("lead and co-signer are the same key");
-  if (lead && !(await opts.isActiveKey(lead))) problems.push("lead enclave key is not active");
   if (problems.length) return { ok: false, problems };
 
-  // 2. open the holdout sealed to this enclave
+  // 2. the job and the bundle hold up against this node's own view of the chain, and the lead key is active
+  //    under another attester (node/jobCheck.ts)
+  problems.push(...(await checkCosignJob(opts.chain, { job: opts.job, signed, me: me.address })));
+  if (problems.length) return { ok: false, problems };
+
+  // 3. open the holdout sealed to this enclave
   let holdoutSessions: Session[] | undefined;
   if (opts.holdout) {
     const blob = b.holdout.sealed[me.address.toLowerCase()];
@@ -151,7 +163,7 @@ export async function cosign(opts: {
     }
   }
 
-  // 3. replay and rescore everything
+  // 4. replay and rescore everything
   const v = verifyBundle(
     b,
     new Map(opts.publicCases.map((c) => [c.id, c])),
@@ -159,7 +171,7 @@ export async function cosign(opts: {
   );
   problems.push(...v.problems);
 
-  // 4. report shape the registry will accept
+  // 5. report shape the registry will accept
   const now = Math.floor((opts.now ?? Date.now()) / 1000);
   const { issuedAt, expiresAt } = b.report;
   if (b.seeds < LAUNCH_PARAMS.minSeeds) problems.push("too few seeds");

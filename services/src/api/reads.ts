@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { attesters, corpusVersions, enclaveKeys, nodeRegistrations } from "../db/schema.ts";
 import { FAMILY_PREFIX, FAMILY_TITLES, isCritical } from "../corpus/families.ts";
 import type { AppDeps } from "./context.ts";
-import { endpointMessage, fixListMessage, runFee } from "./builder.ts";
+import { EIP712_TYPES, MAX_DEADLINE_S, eip712Domain, runFee } from "./builder.ts";
 import { lc, ratingById } from "./ratings.ts";
 import { ratings } from "../db/schema.ts";
 
@@ -22,10 +22,14 @@ export async function config(deps: AppDeps) {
     explorer: deps.chain.explorer,
     rpcUrl: deps.chain.rpcUrl,
     contracts: deps.chain.contracts,
-    // exact texts builders sign; the dashboard fills the {placeholders}
-    messages: {
-      endpoint: endpointMessage(deps.chain.chainId, "{requestId}", "{endpoint}"),
-      fixList: fixListMessage(deps.chain.chainId, "{ratingId}"),
+    // EIP-712 typed data builders sign (eth_signTypedData_v4). setEndpoint: SetEndpoint { requestId, endpoint,
+    // issuedAt, deadline }; fixList: ReadFixList { ratingId, deadline }. Times are unix seconds, deadline at most
+    // maxDeadlineSeconds ahead; each setEndpoint needs an issuedAt newer than the last accepted one.
+    typedData: {
+      domain: eip712Domain(deps),
+      types: EIP712_TYPES,
+      primaryTypes: { endpoint: "SetEndpoint", fixList: "ReadFixList" },
+      maxDeadlineSeconds: MAX_DEADLINE_S,
     },
     runFee: fee,
     feeDecimals: 6,

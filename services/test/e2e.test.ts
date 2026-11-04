@@ -26,6 +26,7 @@ import { loadCorpus } from "../src/corpus/loader.ts";
 import { holdoutCommit, leafOf, merkleRoot } from "../src/corpus/merkle.ts";
 import { FunctionAgentClient } from "../src/harness/agentClient.ts";
 import { hardened } from "../src/mock-agents/agents.ts";
+import { openNodeChain } from "../src/node/jobCheck.ts";
 
 /**
  * End to end on a local chain with the real compiled contracts:
@@ -160,22 +161,24 @@ maybe("end to end on anvil", () => {
     const next = await pub.getBlock({ blockNumber: req.blockNumber + 1n });
     const now = Number((await pub.getBlock()).timestamp) * 1000;
 
-    const isActiveKey = (key: Address) =>
-      pub.readContract({ address: attesters, abi: A.attesters.abi, functionName: "isActiveKey", args: [key] }) as Promise<boolean>;
+    // each node's own pinned view of the chain (the same one main.ts opens)
+    const chain = await openNodeChain({ rpcUrl: rpc, chainId: 31337, ratingRegistry: registry, attesterRegistry: attesters, corpusRoot });
     const [leadE, coE] = enclaves as [Enclave, Enclave, Enclave];
+    const job = {
+      chainId: 31337,
+      registry: getAddress(registry),
+      agentRegistry: getAddress(identity),
+      agentId,
+      versionHash,
+      requestId: 1n,
+      requestNextBlockHash: next.hash!,
+      endpoint: "http://127.0.0.1:1/hardened",
+      runToken: "t",
+    };
 
     const { signed, report } = await leadRun({
-      job: {
-        chainId: 31337,
-        registry,
-        agentRegistry: identity,
-        agentId,
-        versionHash,
-        requestId: 1n,
-        requestNextBlockHash: next.hash!,
-        endpoint: "http://127.0.0.1:1/hardened",
-        runToken: "t",
-      },
+      job,
+      chain,
       publicCases,
       corpusRoot,
       holdoutCommit: commit,
@@ -185,7 +188,7 @@ maybe("end to end on anvil", () => {
       agent: new FunctionAgentClient(hardened),
       now,
     });
-    const co = await cosign({ signed, publicCases, me: coE, isActiveKey, now });
+    const co = await cosign({ job: { ...job, runToken: "" }, signed, publicCases, me: coE, chain, now });
     expect(co.ok).toBe(true);
     if (!co.ok) throw new Error(co.problems.join("; "));
 

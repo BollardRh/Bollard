@@ -8,6 +8,7 @@ import type { AttackCase } from "../src/corpus/schema.ts";
 import { FunctionAgentClient } from "../src/harness/agentClient.ts";
 import { bundleHash, type RunBundle } from "../src/harness/bundle.ts";
 import { hardened, naive } from "../src/mock-agents/agents.ts";
+import { fakeChain, openRequest, type FakeChainState } from "./helpers/fakeChain.ts";
 
 /**
  * M4 done-when: a tampered transcript, receipt or score makes the co-signer refuse. Also covers the holdout
@@ -46,8 +47,18 @@ const job: RunJob = {
   runToken: "t",
 };
 
-const active = new Set<string>([lead, coA, coB].map((e) => e.address.toLowerCase()));
-const isActiveKey = async (k: Address) => active.has(k.toLowerCase());
+// the node's own view of the chain: the request at block 100, its next block, and one attester per enclave key
+const attesterAddr = (n: number) => getAddress(`0x${n.toString(16).padStart(40, "a")}`);
+const state: FakeChainState = {
+  chainId: job.chainId,
+  ratingRegistry: job.registry,
+  attesterRegistry: "0x00000000000000000000000000000000A7735700",
+  corpusRoot,
+  requests: new Map([[job.requestId, openRequest({ agentRegistry: job.agentRegistry, agentId: job.agentId, versionHash: job.versionHash }, 100n)]]),
+  blocks: new Map([[101n, job.requestNextBlockHash]]),
+  keys: new Map([lead, coA, coB].map((e, i) => [e.address.toLowerCase(), { attester: attesterAddr(i + 1), active: true }])),
+};
+const chain = fakeChain(state);
 
 let honest: SignedBundle;
 let leadReport: { digest: Hex; signature: Hex };
@@ -55,6 +66,7 @@ let leadReport: { digest: Hex; signature: Hex };
 beforeAll(async () => {
   const out = await leadRun({
     job,
+    chain,
     publicCases,
     holdout,
     corpusRoot,
@@ -70,7 +82,7 @@ beforeAll(async () => {
 }, 60_000);
 
 const cosignAs = (me: Enclave, signed: SignedBundle, over: Partial<Parameters<typeof cosign>[0]> = {}) =>
-  cosign({ signed, publicCases, holdout, me, isActiveKey, now: NOW + 60_000, ...over });
+  cosign({ job, signed, publicCases, holdout, me, chain, now: NOW + 60_000, ...over });
 
 /** A malicious lead edits the bundle and re-signs it, so only the replay can catch the edit. */
 async function resign(edit: (b: RunBundle) => void | Promise<void>): Promise<SignedBundle> {
@@ -156,6 +168,7 @@ describe("co-sign (doc §5.7)", () => {
     // the lead hides naive behaviour inside the sealed holdout and claims clean results
     const naiveRun = await leadRun({
       job,
+      chain,
       publicCases,
       holdout,
       corpusRoot,
@@ -189,7 +202,7 @@ describe("co-sign (doc §5.7)", () => {
   });
 
   test("an inactive lead key", async () => {
-    await refuses(honest, "lead enclave key is not active", coA, { isActiveKey: async (k: Address) => getAddress(k) !== lead.address });
+    await refuses(honest, "lead enclave key is not active", coA, { chain: { ...chain, isActiveKey: async (k: Address) => getAddress(k) !== lead.address } });
   });
 
   test("co-signing your own bundle", async () => {
@@ -199,7 +212,7 @@ describe("co-sign (doc §5.7)", () => {
 
   // ------------------------------------------------------------------ holdout material
   test("a co-signer the holdout was not sealed to", async () => {
-    active.add(outsider.address.toLowerCase());
+    state.keys.set(outsider.address.toLowerCase(), { attester: attesterAddr(9), active: true });
     await refuses(honest, "no holdout sealed to this co-signer", outsider);
   });
 

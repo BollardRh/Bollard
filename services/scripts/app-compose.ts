@@ -32,7 +32,7 @@ const appCompose = {
   public_sysinfo: true,
   public_tcbinfo: true,
   no_instance_id: false,
-  allowed_envs: ["COORDINATOR_URL", "ATTESTERS_RHC", "ATTESTER_ADDRESS", "HOLDOUT_KEY"],
+  allowed_envs: ["COORDINATOR_URL", "ATTESTER_ADDRESS", "HOLDOUT_KEY"], // chain, registries pinned in the compose
 };
 
 const json = JSON.stringify(appCompose, null, 2) + "\n";

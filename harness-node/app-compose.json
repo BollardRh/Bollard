@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "bollard-harness",
   "runner": "docker-compose",
-  "docker_compose_file": "# dstack runs this compose file inside the CVM. The image MUST be referenced by digest, so the compose hash\n# fixes exactly which harness code holds an enclave key.\nservices:\n  harness:\n    image: ghcr.io/bollardrh/bollard-harness@sha256:REPLACE_WITH_RELEASE_DIGEST\n    restart: always\n    environment:\n      ROLE: harness\n      CHAIN_ID: \"46630\"\n      RHC_RPC_URL: https://rpc.testnet.chain.robinhood.com\n      COORDINATOR_URL: ${COORDINATOR_URL}\n      ATTESTERS_RHC: ${ATTESTERS_RHC}\n      ATTESTER_ADDRESS: ${ATTESTER_ADDRESS}\n      HOLDOUT_PATH: /holdout/holdout.enc\n      HOLDOUT_KEY: ${HOLDOUT_KEY}\n      APP_COMPOSE_PATH: /app/app-compose.json\n    volumes:\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /dstack/app-compose.json:/app/app-compose.json:ro\n      - holdout:/holdout:ro\nvolumes:\n  holdout:\n",
+  "docker_compose_file": "# dstack runs this compose file inside the CVM. The image MUST be referenced by digest, so the compose hash\n# fixes exactly which harness code holds an enclave key.\nservices:\n  harness:\n    image: ghcr.io/bollardrh/bollard-harness@sha256:REPLACE_WITH_RELEASE_DIGEST\n    restart: always\n    environment:\n      ROLE: harness\n      CHAIN_ID: \"46630\"\n      RHC_RPC_URL: https://rpc.testnet.chain.robinhood.com\n      COORDINATOR_URL: ${COORDINATOR_URL}\n      # pinned in the compose (and so in the compose hash), never operator-supplied\n      ATTESTERS_RHC: \"0x6959413B747643Fd070c6A541354DB3FE9e6975a\"\n      REGISTRY_RHC: \"0x016889569C0A52Ea1B1ffa428E2fe346d36212dF\"\n      ATTESTER_ADDRESS: ${ATTESTER_ADDRESS}\n      HOLDOUT_PATH: /holdout/holdout.enc\n      HOLDOUT_KEY: ${HOLDOUT_KEY}\n      APP_COMPOSE_PATH: /app/app-compose.json\n    volumes:\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /dstack/app-compose.json:/app/app-compose.json:ro\n      - holdout:/holdout:ro\nvolumes:\n  holdout:\n",
   "kms_enabled": true,
   "gateway_enabled": false,
   "local_key_provider_enabled": false,
@@ -12,7 +12,6 @@
   "no_instance_id": false,
   "allowed_envs": [
     "COORDINATOR_URL",
-    "ATTESTERS_RHC",
     "ATTESTER_ADDRESS",
     "HOLDOUT_KEY"
   ]

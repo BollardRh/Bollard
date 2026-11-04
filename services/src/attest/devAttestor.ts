@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { bytesToHex, hexToBytes, type Address, type Hex } from "viem";
 import { OFFSETS, osMeasurement, reportData, TDX_MIN_LEN } from "./tdx.ts";
-import { replayRtmr3, type DstackEvent } from "./rtmr.ts";
+import { replayRtmr3, runtimeEvent, type DstackEvent } from "./rtmr.ts";
 
 /**
  * DEV ATTESTOR — UNSAFE, TESTNET AND LOCAL CHAINS ONLY.
@@ -26,15 +26,25 @@ export function isDevQuote(q: Uint8Array): boolean {
   return Buffer.from(mrtd).equals(Buffer.from(DEV_REGISTERS.mrtd));
 }
 
-/** A dstack-shaped IMR-3 event log whose compose-hash event names `composeHash`. */
+/** Key-provider name the dev attestor reports. Only the dev verifier on a dev chain accepts it. */
+export const DEV_KEY_PROVIDER = "bollard-dev-unsafe";
+
+/**
+ * A dstack-format IMR-3 event log for `composeHash`, in the order dstack-util's system setup emits the boot
+ * events (dstack/dstack-util/src/system_setup.rs): system-preparing, app-id, compose-hash, instance-id,
+ * boot-mr-done, key-provider, system-ready. Digests are computed the dstack way (rtmr.ts).
+ */
 export function devEventLog(composeHash: Hex, instanceId: string): DstackEvent[] {
-  const hex = (s: string) => Buffer.from(s, "utf8").toString("hex");
+  const h = composeHash.slice(2).toLowerCase();
+  const sha = (s: string) => createHash("sha256").update(s).digest();
   return [
-    { imr: 3, event: "system-preparing", event_payload: "" },
-    { imr: 3, event: "app-id", event_payload: hex("bollard-harness") },
-    { imr: 3, event: "compose-hash", event_payload: composeHash.slice(2).toLowerCase() },
-    { imr: 3, event: "instance-id", event_payload: hex(instanceId) },
-    { imr: 3, event: "key-provider", event_payload: hex(DEV_MARKER) },
+    runtimeEvent("system-preparing"),
+    runtimeEvent("app-id", h.slice(0, 40)), // dstack without KMS: the compose hash truncated to 20 bytes
+    runtimeEvent("compose-hash", h),
+    runtimeEvent("instance-id", sha(instanceId).subarray(0, 20)),
+    runtimeEvent("boot-mr-done"),
+    runtimeEvent("key-provider", Buffer.from(JSON.stringify({ name: DEV_KEY_PROVIDER, id: Buffer.from(DEV_MARKER).toString("hex") }))),
+    runtimeEvent("system-ready"),
   ];
 }
 

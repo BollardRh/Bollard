@@ -61,6 +61,7 @@ export const runRequests = pgTable(
     assignRound: integer("assign_round").notNull().default(0),
     stalledLeads: text("stalled_leads").array().notNull().default([]),
     updatedAt: ts("updated_at").notNull().defaultNow(),
+    endpointSignedAt: bigint("endpoint_signed_at", { mode: "number" }), // issuedAt (unix s) of the last accepted SetEndpoint signature
   },
   (t) => [primaryKey({ columns: [t.chainId, t.requestId] })],
 );
@@ -341,6 +342,7 @@ export const cursors = pgTable(
     chainId: integer("chain_id").notNull(),
     stream: text("stream").notNull(),
     block: bigint("block", { mode: "bigint" }).notNull(),
+    blockHash: text("block_hash"),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.stream] })],
 );

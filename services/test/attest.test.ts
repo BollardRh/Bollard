@@ -5,7 +5,7 @@ import { bytesToHex, getAddress, hexToBytes, keccak256, toHex, type Hex } from "
 import { DcapUnavailableError, DevDcapVerifier, PhalaCloudVerifier, type DcapVerifier } from "../src/attest/dcap.ts";
 import { DEV_OS_MEASUREMENT, devQuote, isDevQuote } from "../src/attest/devAttestor.ts";
 import { Enclave } from "../src/attest/enclave.ts";
-import { composeHashOf, replayRtmr3 } from "../src/attest/rtmr.ts";
+import { composeHashOf, DSTACK_RUNTIME_EVENT_TYPE, replayRtmr3, runtimeEvent } from "../src/attest/rtmr.ts";
 import { open, seal } from "../src/attest/sealedBox.ts";
 import { keyBinding, osMeasurement, parseTdxV4 } from "../src/attest/tdx.ts";
 import { verifyRegistration, type Registration } from "../src/attest/verify.ts";
@@ -55,12 +55,13 @@ describe("TDX quote fields (mirror of TdxQuote.sol)", () => {
 });
 
 describe("RTMR3 replay", () => {
-  test("starts at 48 zero bytes and extends with SHA384(old || SHA384(payload))", () => {
+  test("starts at 48 zero bytes and extends with SHA384(old || SHA384(u32le(type) : name : payload)), IMR 3 only", () => {
     expect(replayRtmr3([])).toEqual(Buffer.alloc(48));
-    const payload = "deadbeef";
-    const d = createHash("sha384").update(Buffer.from(payload, "hex")).digest();
+    const pre = Buffer.concat([Buffer.from([0x01, 0x00, 0x00, 0x08]), Buffer.from(":x:"), Buffer.from("deadbeef", "hex")]);
+    const d = createHash("sha384").update(pre).digest();
     const want = createHash("sha384").update(Buffer.concat([Buffer.alloc(48), d])).digest();
-    expect(replayRtmr3([{ imr: 3, event: "x", event_payload: payload }, { imr: 1, event: "ignored", event_payload: "00" }])).toEqual(want);
+    const ignored = { imr: 1, event_type: 1, event: "ignored", event_payload: "00", digest: "ff".repeat(48) };
+    expect(replayRtmr3([{ imr: 3, event_type: DSTACK_RUNTIME_EVENT_TYPE, event: "x", event_payload: "deadbeef" }, ignored])).toEqual(want);
   });
 });
 
@@ -85,7 +86,7 @@ describe("watcher registration check (doc §4.2)", () => {
 
   test("an edited event log fails the RTMR3 replay", async () => {
     const r = registration();
-    r.eventLog = [...r.eventLog, { imr: 3, event: "extra", event_payload: "00" }];
+    r.eventLog = [...r.eventLog, runtimeEvent("extra", "00")];
     expect((await verifyRegistration(r, dev)).reasons).toContain("RTMR3 replay mismatch");
   });
 
@@ -110,7 +111,7 @@ describe("DCAP verifiers", () => {
     expect(await dev.verify(real)).toBe(false);
   });
 
-  test("the Phala verifier passes only on result.quote.verified === true", async () => {
+  test("the Phala verifier needs quote.verified === true and treats outages as unavailable", async () => {
     const calls: string[] = [];
     const fake = (body: unknown, status = 200) =>
       (async (_url: string | URL | Request, init?: RequestInit) => {
@@ -118,11 +119,13 @@ describe("DCAP verifiers", () => {
         return new Response(JSON.stringify(body), { status });
       }) as unknown as typeof fetch;
     const q = hexToBytes(registration().quote as Hex);
-    expect(await new PhalaCloudVerifier("https://x", fake({ quote: { verified: true } })).verify(q)).toBe(true);
     expect(await new PhalaCloudVerifier("https://x", fake({ quote: { verified: false } })).verify(q)).toBe(false);
     expect(await new PhalaCloudVerifier("https://x", fake({}, 400)).verify(q)).toBe(false);
+    // verified but no TCB collateral: not an answer, retry later
+    await expect(new PhalaCloudVerifier("https://x", fake({ quote: { verified: true } })).verify(q)).rejects.toBeInstanceOf(DcapUnavailableError);
     // an outage is not a rejection: the watcher keeps the key pending and retries
     await expect(new PhalaCloudVerifier("https://x", fake({}, 500)).verify(q)).rejects.toBeInstanceOf(DcapUnavailableError);
+    await expect(new PhalaCloudVerifier("https://x", fake({}, 429)).verify(q)).rejects.toBeInstanceOf(DcapUnavailableError);
     expect(JSON.parse(calls[0]!).hex).toBe(bytesToHex(q).slice(2));
   });
 });

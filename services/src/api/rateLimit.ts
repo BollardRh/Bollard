@@ -28,7 +28,8 @@ async function planOf(deps: AppDeps, keyHash: string): Promise<"free" | "paid" |
   const [row] = await deps.db.select({ paidUntil: apiKeys.paidUntil }).from(apiKeys).where(eq(apiKeys.keyHash, keyHash));
   const plan = !row ? null : row.paidUntil && row.paidUntil.getTime() > deps.now() ? "paid" : "free";
   if (keyCache.size > 10_000) keyCache.clear();
-  keyCache.set(keyHash, { plan, until: deps.now() + 60_000 });
+  // unknown keys are re-checked soon, so a key works shortly after its plan payment is indexed
+  keyCache.set(keyHash, { plan, until: deps.now() + (plan ? 60_000 : 10_000) });
   return plan;
 }
 

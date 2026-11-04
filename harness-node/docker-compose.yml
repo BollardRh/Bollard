@@ -9,7 +9,9 @@ services:
       CHAIN_ID: "46630"
       RHC_RPC_URL: https://rpc.testnet.chain.robinhood.com
       COORDINATOR_URL: ${COORDINATOR_URL}
-      ATTESTERS_RHC: ${ATTESTERS_RHC}
+      # pinned in the compose (and so in the compose hash), never operator-supplied
+      ATTESTERS_RHC: "0x6959413B747643Fd070c6A541354DB3FE9e6975a"
+      REGISTRY_RHC: "0x016889569C0A52Ea1B1ffa428E2fe346d36212dF"
       ATTESTER_ADDRESS: ${ATTESTER_ADDRESS}
       HOLDOUT_PATH: /holdout/holdout.enc
       HOLDOUT_KEY: ${HOLDOUT_KEY}

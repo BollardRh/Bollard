@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createPublicClient, getAddress, http, keccak256, parseAbi, type Address, type Hex } from "viem";
+import { getAddress, keccak256, type Address, type Hex } from "viem";
 import { cosign, leadRun, type HoldoutSet } from "../attest/cosign.ts";
 import { devQuote } from "../attest/devAttestor.ts";
 import { Enclave } from "../attest/enclave.ts";
@@ -8,6 +8,7 @@ import { loadCorpus } from "../corpus/loader.ts";
 import { decryptHoldout } from "../corpus/holdout.ts";
 import { NodeClient } from "./client.ts";
 import { devEnclave, devSelfRegister } from "./devRegister.ts";
+import { JobRefused, openNodeChain } from "./jobCheck.ts";
 
 /**
  * Harness node (ROLE=harness), runs inside an Intel TDX CVM on dstack (doc §4.2, §5.7).
@@ -31,6 +32,8 @@ const env = (k: string, d?: string) => {
 async function main() {
   const chainId = Number(env("CHAIN_ID", "46630"));
   const registry = getAddress(env("ATTESTERS_RHC")) as Address;
+  const ratingRegistry = getAddress(env("REGISTRY_RHC")) as Address;
+  const rpcUrl = env("RHC_RPC_URL", "https://rpc.testnet.chain.robinhood.com");
   const appCompose = readFileSync(env("APP_COMPOSE_PATH", "/app/app-compose.json"), "utf8");
   const composeHash = composeHashOf(appCompose);
   const dev = process.env.DEV_ATTESTOR === "1";
@@ -43,6 +46,8 @@ async function main() {
   const quoteHash = keccak256(quote);
 
   const corpus = loadCorpus();
+  // pinned chain view; throws (the node does not start) if the RPC or the registries are not the configured ones
+  const chain = await openNodeChain({ rpcUrl, chainId, ratingRegistry, attesterRegistry: registry, corpusRoot: corpus.root });
   const publicCases = corpus.cases.map((c) => c.case);
   let holdout: HoldoutSet | undefined;
   let commit: Hex;
@@ -59,7 +64,7 @@ async function main() {
   if (dev && process.env.ATTESTER_PRIVATE_KEY && process.env.STAKE_TOKEN_RHC) {
     const r = await devSelfRegister({
       chainId,
-      rpcUrl: env("RHC_RPC_URL", "https://rpc.testnet.chain.robinhood.com"),
+      rpcUrl,
       attesters: registry,
       stakeToken: getAddress(process.env.STAKE_TOKEN_RHC),
       attesterKey: process.env.ATTESTER_PRIVATE_KEY as Hex,
@@ -69,10 +74,6 @@ async function main() {
     });
     console.log(`dev self-registration: ${r} (key ${enclave.address})`);
   }
-
-  const chain = createPublicClient({ transport: http(env("RHC_RPC_URL", "https://rpc.testnet.chain.robinhood.com")) });
-  const abi = parseAbi(["function isActiveKey(address) view returns (bool)"]);
-  const isActiveKey = (key: Address) => chain.readContract({ address: registry, abi, functionName: "isActiveKey", args: [key] });
 
   // The API accepts hello only once the key is registered on-chain (self-registered above on testnet, or by
   // the attester's EOA from the printed registerEnclaveKey call), so keep trying until it is.
@@ -88,10 +89,20 @@ async function main() {
       }
       const { job } = await client.claim();
       if (job?.role === "lead") {
-        const out = await leadRun({ job: job.job, publicCases, holdout, corpusRoot: corpus.root, holdoutCommit: commit, enclave, quoteHash, cosigners: job.cosigners });
+        let out;
+        try {
+          out = await leadRun({ job: job.job, chain, publicCases, holdout, corpusRoot: corpus.root, holdoutCommit: commit, enclave, quoteHash, cosigners: job.cosigners });
+        } catch (e) {
+          if (!(e instanceof JobRefused)) throw e;
+          // nothing was run, sealed or signed; skip the job (the coordinator may offer it again, it is re-checked)
+          console.error(`refused lead job for request ${job.job.requestId}: ${e.problems.join("; ")}`);
+          await Bun.sleep(pollMs);
+          continue;
+        }
         await client.submitBundle(out.signed, out.report);
       } else if (job?.role === "cosign") {
-        const res = await cosign({ signed: job.signed, publicCases, holdout, me: enclave, isActiveKey });
+        const res = await cosign({ job: job.job, signed: job.signed, publicCases, holdout, me: enclave, chain });
+        if (!res.ok) console.error(`refused to co-sign ${job.signed.bundleHash}: ${res.problems.join("; ")}`);
         await client.submitCosign(job.signed.bundleHash, res);
       } else {
         await Bun.sleep(pollMs);

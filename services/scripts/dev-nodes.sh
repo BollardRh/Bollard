@@ -16,16 +16,21 @@ j() { python3 -c "import json;print(json.load(open('$D'))['$1'])"; }
 start() {
   : "${BOLLARD_API_URL:?set BOLLARD_API_URL to the deployed API, e.g. https://<project>.vercel.app}"
   set -a; source "$ROOT/.env.testnet.local"; set +a
+  # The private holdout set (encrypted) lives outside the repo. With it, nodes test the holdout cases and sign
+  # the published holdout commitment; without it they fall back to the old testnet placeholder commitment.
+  local hp="${HOLDOUT_PATH:-$HOME/bollard-private/holdout.enc}" hk="${HOLDOUT_KEY_FILE:-$HOME/bollard-private/holdout.key}"
+  local holdout_env=(HOLDOUT_COMMIT=0x836736e36ceeb4b2c5fa2d8c09a4d9fb8e0fd2fcc7f0d45471c95d4469b933d8)
+  if [ -f "$hp" ] && [ -f "$hk" ]; then holdout_env=(HOLDOUT_PATH="$hp" HOLDOUT_KEY="$(cat "$hk")"); echo "holdout: $hp"; else echo "holdout: none (placeholder commitment)"; fi
   for i in 1 2 3; do
     if [ -f "$DIR/node$i.pid" ] && kill -0 "$(cat "$DIR/node$i.pid")" 2>/dev/null; then echo "node$i already running"; continue; fi
     addr_var="ATTESTER${i}_ADDRESS"; key_var="ATTESTER${i}_PRIVATE_KEY"
     (
       cd "$ROOT/services"
       DEV_ATTESTOR=1 CHAIN_ID=46630 RHC_RPC_URL="${RHC_RPC_URL:-https://rpc.testnet.chain.robinhood.com}" \
-      ATTESTERS_RHC="$(j attesterRegistry)" STAKE_TOKEN_RHC="$(j tBLRD)" \
+      ATTESTERS_RHC="$(j attesterRegistry)" REGISTRY_RHC="$(j ratingRegistry)" STAKE_TOKEN_RHC="$(j tBLRD)" \
       ATTESTER_ADDRESS="${!addr_var}" ATTESTER_PRIVATE_KEY="${!key_var}" \
-      APP_COMPOSE_PATH="$ROOT/harness-node/app-compose.json" \
-      HOLDOUT_COMMIT=0x836736e36ceeb4b2c5fa2d8c09a4d9fb8e0fd2fcc7f0d45471c95d4469b933d8 \
+      APP_COMPOSE_PATH="$ROOT/harness-node/app-compose.dev.json" \
+      env "${holdout_env[@]}" \
       DEV_ENCLAVE_KEY_FILE="$DIR/node$i.key" COORDINATOR_URL="$BOLLARD_API_URL" POLL_MS="${POLL_MS:-30000}" \
       nohup bun src/node/main.ts >> "$DIR/node$i.log" 2>&1 &
       echo $! > "$DIR/node$i.pid"

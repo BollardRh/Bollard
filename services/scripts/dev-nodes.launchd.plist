@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the 3 testnet dev nodes running on a Mac: runs `dev-nodes.sh start` at login and every 5 minutes
+  (it skips nodes that are already running, so a crashed node comes back within 5 minutes).
+  Install from the repo root (fills in the repo and home paths):
+    sed "s#__REPO__#$PWD#g; s#__HOME__#$HOME#g" services/scripts/dev-nodes.launchd.plist > ~/Library/LaunchAgents/tech.usebollard.devnodes.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/tech.usebollard.devnodes.plist
+  Remove with:
+    launchctl bootout gui/$(id -u)/tech.usebollard.devnodes && rm ~/Library/LaunchAgents/tech.usebollard.devnodes.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>tech.usebollard.devnodes</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>__REPO__/services/scripts/dev-nodes.sh</string><string>start</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BOLLARD_API_URL</key><string>https://usebollard.tech</string>
+    <key>PATH</key><string>__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>300</integer>
+  <key>StandardOutPath</key><string>__REPO__/.dev-nodes/launchd.log</string>
+  <key>StandardErrorPath</key><string>__REPO__/.dev-nodes/launchd.log</string>
+</dict>
+</plist>

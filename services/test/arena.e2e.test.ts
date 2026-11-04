@@ -215,6 +215,38 @@ maybe("arena engine end to end (local chain + Postgres)", () => {
     expect(ok.status).toBe(200);
   });
 
+  test("the indexer notices when the block a cursor ended on is no longer canonical, and rewinds", async () => {
+    await chain.mine(2);
+    await cron("indexer");
+    const [before] = await deps.db.select().from(schema.cursors).where(eq(schema.cursors.stream, "arena_bounty"));
+    expect(before!.blockHash).toMatch(/^0x[0-9a-f]{64}$/);
+    // pretend the chain reorganised under the stored cursor
+    await deps.db.update(schema.cursors).set({ blockHash: `0x${"ab".repeat(32)}` }).where(eq(schema.cursors.stream, "arena_bounty"));
+    const r = (await cron("indexer")) as { reorgs?: { stream: string }[] };
+    expect(r.reorgs?.map((x) => x.stream)).toEqual(["arena_bounty"]);
+    const [after] = await deps.db.select().from(schema.cursors).where(eq(schema.cursors.stream, "arena_bounty"));
+    expect(after!.blockHash).not.toBe(`0x${"ab".repeat(32)}`);
+    expect(after!.block).toBeGreaterThanOrEqual(before!.block);
+    // re-indexing the rewound range is idempotent: still exactly one arena win, one candidate
+    expect((await deps.db.select().from(schema.corpusCandidates)).length).toBe(1);
+  }, 60_000);
+
+  test("ops can review corpus candidates with the cron secret; nobody else can", async () => {
+    const admin = (path: string, init: RequestInit = {}, secret = "cron-test") =>
+      fetch(`${base}/api/admin${path}`, { ...init, headers: { "x-cron-secret": secret, "content-type": "application/json" } });
+    expect((await admin("/candidates", {}, "wrong")).status).toBe(403);
+    expect((await fetch(`${base}/api/admin/candidates`)).status).toBe(403);
+    const list = (await (await admin("/candidates?status=pending")).json()) as { id: string; messages: number }[];
+    expect(list.length).toBe(1);
+    expect(list[0]!.messages).toBe(2);
+    const one = (await (await admin(`/candidates/${list[0]!.id}`)).json()) as { transcript: { messages: { role: string }[] } };
+    expect(one.transcript.messages.map((m) => m.role)).toEqual(["attacker", "agent"]);
+    expect((await admin(`/candidates/${list[0]!.id}`, { method: "POST", body: JSON.stringify({ status: "bogus" }) })).status).toBe(400);
+    const marked = (await (await admin(`/candidates/${list[0]!.id}`, { method: "POST", body: JSON.stringify({ status: "rejected", family: 1 }) })).json()) as { status: string; familyGuess: number };
+    expect(marked).toMatchObject({ status: "rejected", familyGuess: 1 });
+    expect(((await (await admin("/candidates?status=pending")).json()) as unknown[]).length).toBe(0);
+  });
+
   test("an attempt has at most 30 messages", async () => {
     const b = chain.wallet(4).account!.address;
     const input = { chainId: 31337, arenaId: "2", attacker: b, salt: saltB };

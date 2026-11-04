@@ -42,10 +42,10 @@ export const appRouter = t.router({
       .input(z.object({ chainId: z.number().int(), requestId: Uint }))
       .query(({ input, ctx }) => runStatus(ctx.deps, input.chainId, input.requestId)),
     setEndpoint: t.procedure
-      .input(z.object({ chainId: z.number().int(), requestId: Uint, endpoint: z.string().max(500), signature: Sig }))
+      .input(z.object({ chainId: z.number().int(), requestId: Uint, endpoint: z.string().max(500), issuedAt: z.number().int().nonnegative().max(2 ** 40), deadline: z.number().int().nonnegative().max(2 ** 40), signature: Sig }))
       .mutation(({ input, ctx }) => setEndpoint(ctx.deps, input)),
     fixList: t.procedure
-      .input(z.object({ chainId: z.number().int(), ratingId: Uint, signature: Sig }))
+      .input(z.object({ chainId: z.number().int(), ratingId: Uint, deadline: z.number().int().nonnegative().max(2 ** 40), signature: Sig }))
       .mutation(({ input, ctx }) => fixList(ctx.deps, input)), // owner-signed; POST keeps the signature out of URLs
   }),
   arena: t.router({

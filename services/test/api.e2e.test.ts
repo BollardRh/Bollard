@@ -1,16 +1,17 @@
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
-import { keccak256, parseEther, toHex, type Address, type Hex } from "viem";
+import { getAddress, keccak256, parseEther, toHex, type Address, type Hex } from "viem";
 import { foundry } from "viem/chains";
 import * as schema from "../src/db/schema.ts";
 import { createApp } from "../src/api/app.ts";
 import { createBot } from "../src/api/bot.ts";
 import type { AppDeps } from "../src/api/context.ts";
 import { MemoryStorage } from "../src/api/storage.ts";
-import { endpointMessage, fixListMessage } from "../src/api/builder.ts";
+import { fixListTypedData, setEndpointTypedData } from "../src/api/builder.ts";
 import { cosign, leadRun } from "../src/attest/cosign.ts";
 import { DevDcapVerifier } from "../src/attest/dcap.ts";
 import { DEV_OS_MEASUREMENT, devQuote } from "../src/attest/devAttestor.ts";
@@ -19,6 +20,7 @@ import { composeHashOf } from "../src/attest/rtmr.ts";
 import { loadCorpus } from "../src/corpus/loader.ts";
 import { holdoutCommit } from "../src/corpus/merkle.ts";
 import { NodeClient } from "../src/node/client.ts";
+import { openNodeChain } from "../src/node/jobCheck.ts";
 import { serveMockAgents } from "../src/mock-agents/server.ts";
 import { artifact, localChainReady, startAnvil, type LocalChain } from "./helpers/localchain.ts";
 import { createTestDb } from "./helpers/testdb.ts";
@@ -175,27 +177,60 @@ maybe("API end to end (local chain + Postgres)", () => {
     expect(w.checked.map((x) => x.ok)).toEqual([true, true, true]);
   }, 60_000);
 
-  test("the payer names the endpoint and gets a run token", async () => {
+  const nowS = () => Math.floor(Date.now() / 1000);
+  const errOf = (r: { error?: unknown }) => JSON.stringify(r.error ?? null);
+
+  test("the payer names the endpoint with EIP-712 and gets a run token; stale and replayed signatures are refused", async () => {
     const owner = chain.wallet(4);
     const endpoint = `${agents.url}/hardened`;
-    const wrong = await trpcMutation("builder.setEndpoint", {
-      chainId: 31337, requestId: "1", endpoint,
-      signature: await chain.wallet(3).signMessage({ account: chain.wallet(3).account!, message: endpointMessage(31337, "1", endpoint) }),
-    });
-    expect(JSON.stringify(wrong.error)).toContain("not from the payer");
-    const ok = await trpcMutation("builder.setEndpoint", {
-      chainId: 31337, requestId: "1", endpoint,
-      signature: await owner.signMessage({ account: owner.account!, message: endpointMessage(31337, "1", endpoint) }),
-    });
-    expect((ok.result?.data as { runToken: string }).runToken).toMatch(/^[0-9a-f]{64}$/);
+    const sign = (w: ReturnType<LocalChain["wallet"]>, m: { endpoint: string; issuedAt: number; deadline: number }) =>
+      w.signTypedData({ account: w.account!, ...setEndpointTypedData(deps, { requestId: "1", ...m }) });
+    const submit = async (w: ReturnType<LocalChain["wallet"]>, m: { endpoint: string; issuedAt: number; deadline: number }, signature?: Hex) =>
+      trpcMutation("builder.setEndpoint", { chainId: 31337, requestId: "1", ...m, signature: signature ?? (await sign(w, m)) });
+
+    // the config endpoint publishes the domain the dashboard signs against
+    const cfg = (await (await fetch(`${base}/api/v1/config`)).json()) as { typedData: { domain: Record<string, unknown>; types: Record<string, unknown> } };
+    expect(cfg.typedData.domain).toEqual({ name: "Bollard", version: "1", chainId: 31337, verifyingContract: getAddress(addr.registry) });
+    expect(Object.keys(cfg.typedData.types).sort()).toEqual(["ReadFixList", "SetEndpoint"]);
+
+    const t0 = nowS() - 30;
+    expect(errOf(await submit(chain.wallet(3), { endpoint, issuedAt: t0, deadline: t0 + 600 }))).toContain("not from the payer");
+    expect(errOf(await submit(owner, { endpoint, issuedAt: t0 - 700, deadline: t0 - 100 }))).toContain("signature expired");
+    expect(errOf(await submit(owner, { endpoint, issuedAt: t0, deadline: nowS() + 7200 }))).toContain("deadline must be within");
+    expect(errOf(await submit(owner, { endpoint, issuedAt: nowS() + 3600, deadline: nowS() + 3600 }))).toContain("issuedAt is in the future");
+    // a signature for another field value (here: deadline) does not verify as the payer
+    const forged = await sign(owner, { endpoint, issuedAt: t0, deadline: t0 + 600 });
+    expect(errOf(await submit(owner, { endpoint, issuedAt: t0, deadline: t0 + 500 }, forged))).toContain("not from the payer");
+
+    // an earlier signature for another endpoint, held back by someone
+    const oldM = { endpoint: `${agents.url}/naive`, issuedAt: t0 - 10, deadline: t0 + 600 };
+    const oldSig = await sign(owner, oldM);
+
+    const m1 = { endpoint, issuedAt: t0, deadline: t0 + 600 };
+    const sig1 = await sign(owner, m1);
+    const ok = await submit(owner, m1, sig1);
+    const token = (ok.result?.data as { runToken: string }).runToken;
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+
+    // the same signature again, and the older one, are both refused and leave the endpoint alone
+    expect(errOf(await submit(owner, m1, sig1))).toContain("newer endpoint signature was already accepted");
+    expect(errOf(await submit(owner, oldM, oldSig))).toContain("newer endpoint signature was already accepted");
+    const [req] = await deps.db.select().from(schema.runRequests).where(eq(schema.runRequests.requestId, "1"));
+    expect(req).toMatchObject({ endpoint, endpointSignedAt: t0 });
+
+    // a fresh signature works and keeps the same run token
+    const again = await submit(owner, { endpoint, issuedAt: t0 + 1, deadline: t0 + 600 });
+    expect((again.result?.data as { runToken: string }).runToken).toBe(token);
   });
 
   test("assign -> lead run -> co-sign -> post -> index -> check() OK", async () => {
     const co = await cron("coordinator");
     expect(co.assigned).toEqual(["1"]);
 
-    const isActiveKey = async (k: Address) =>
-      (await chain.pub.readContract({ address: addr.attesters, abi: A.attesters.abi, functionName: "isActiveKey", args: [k] })) as boolean;
+    // each node's own pinned view of the chain (the same one main.ts opens)
+    const nodeChain = await openNodeChain({
+      rpcUrl: chain.rpc, chainId: 31337, ratingRegistry: addr.registry, attesterRegistry: addr.attesters, corpusRoot: corpus.root,
+    });
     const roles: string[] = [];
     for (let round = 0; round < 2; round++) {
       for (let i = 0; i < 3; i++) {
@@ -203,6 +238,7 @@ maybe("API end to end (local chain + Postgres)", () => {
         if (job?.role === "lead") {
           const out = await leadRun({
             job: job.job,
+            chain: nodeChain,
             publicCases,
             corpusRoot: corpus.root,
             holdoutCommit: commit,
@@ -213,7 +249,7 @@ maybe("API end to end (local chain + Postgres)", () => {
           await clients[i]!.submitBundle(out.signed, out.report);
           roles.push("lead");
         } else if (job?.role === "cosign") {
-          const res = await cosign({ signed: job.signed, publicCases, me: enclaves[i]!, isActiveKey });
+          const res = await cosign({ job: job.job, signed: job.signed, publicCases, me: enclaves[i]!, chain: nodeChain });
           await clients[i]!.submitCosign(job.signed.bundleHash, res);
           roles.push(res.ok ? "cosign" : `refuse:${res.problems.join(";")}`);
         }
@@ -242,13 +278,21 @@ maybe("API end to end (local chain + Postgres)", () => {
     expect(stats).toMatchObject({ activeRatings: 1, activeKeys: 3 });
   }, 120_000);
 
-  test("the owner reads the fix list; others cannot", async () => {
+  test("the owner reads the fix list with an EIP-712 signature; others and expired signatures cannot", async () => {
     const owner = chain.wallet(4);
-    const sig = (w: ReturnType<LocalChain["wallet"]>) => w.signMessage({ account: w.account!, message: fixListMessage(31337, "1") });
-    const mine = await trpcMutation("builder.fixList", { chainId: 31337, ratingId: "1", signature: await sig(owner) });
-    expect(mine.result?.data).toMatchObject({ failedCases: [], holdout: [] });
-    const theirs = await trpcMutation("builder.fixList", { chainId: 31337, ratingId: "1", signature: await sig(chain.wallet(3)) });
-    expect(JSON.stringify(theirs.error)).toContain("only the agent owner");
+    const sig = (w: ReturnType<LocalChain["wallet"]>, deadline: number) =>
+      w.signTypedData({ account: w.account!, ...fixListTypedData(deps, { ratingId: "1", deadline }) });
+    const read = async (w: ReturnType<LocalChain["wallet"]>, deadline: number) =>
+      trpcMutation("builder.fixList", { chainId: 31337, ratingId: "1", deadline, signature: await sig(w, deadline) });
+    const deadline = nowS() + 600;
+    expect((await read(owner, deadline)).result?.data).toMatchObject({ failedCases: [], holdout: [] });
+    expect(errOf(await read(chain.wallet(3), deadline))).toContain("only the agent owner");
+    expect(errOf(await read(owner, nowS() - 1))).toContain("signature expired");
+    expect(errOf(await read(owner, nowS() + 7200))).toContain("deadline must be within");
+    // a signature over another rating id does not authorise this one
+    const other = await owner.signTypedData({ account: owner.account!, ...fixListTypedData(deps, { ratingId: "2", deadline }) });
+    const r = await trpcMutation("builder.fixList", { chainId: 31337, ratingId: "1", deadline, signature: other });
+    expect(errOf(r)).toContain("only the agent owner");
   });
 
   test("Telegram: /rating and /watch, then a stale-version alert", async () => {
@@ -278,6 +322,22 @@ maybe("API end to end (local chain + Postgres)", () => {
 
     const check = await (await fetch(`${base}/v1/check/31337/1?min=1&mask=0`)).json();
     expect(check).toMatchObject({ ok: false, codeName: "STALE_VERSION" });
+  }, 60_000);
+
+  test("a paid API plan (FeeRouter.payPlan) is indexed and lifts the key's rate limit", async () => {
+    const key = "plan-test-key";
+    const keyHash = `0x${createHash("sha256").update(key).digest("hex")}` as Hex;
+    const payer = chain.wallet(0);
+    const limitFor = async () => (await fetch(`${base}/v1/search?q=1`, { headers: { "x-api-key": key } })).headers.get("x-ratelimit-limit");
+    await chain.send(payer, addr.usdg, A.erc20.abi, "mint", [payer.account!.address, 198_000_000n]);
+    await chain.send(payer, addr.usdg, A.erc20.abi, "approve", [addr.feeRouter, 198_000_000n]);
+    await chain.send(payer, addr.feeRouter, A.feeRouter.abi, "payPlan", [keyHash, 1]);
+    await chain.send(payer, addr.feeRouter, A.feeRouter.abi, "payPlan", [keyHash, 1]); // renewal takes the update path
+    await cron("indexer");
+    const [row] = await deps.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.keyHash, keyHash.slice(2)));
+    expect(row?.plan).toBe("paid");
+    expect(row!.paidUntil!.getTime()).toBeGreaterThan(Date.now() + 55 * 86_400_000); // two months
+    expect(await limitFor()).toBe("100000");
   }, 60_000);
 
   test("guards: cron secret, unsigned node calls, keeper no-ops", async () => {

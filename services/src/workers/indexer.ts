@@ -38,6 +38,8 @@ type Tx = Parameters<Parameters<AppDeps["db"]["transaction"]>[0]>[0];
 type Decoded = { log: Log; name: string; args: Record<string, unknown> };
 
 const MAX_RANGE = 2_000n;
+/** How far to step back when the block a cursor ended on is no longer on the canonical chain. */
+export const REORG_REWIND = 500n;
 const lc = (a: unknown) => String(a).toLowerCase();
 const s = (v: unknown) => (typeof v === "bigint" ? v.toString() : String(v));
 const at = (secs: bigint | number) => new Date(Number(secs) * 1000);
@@ -59,11 +61,48 @@ export async function runIndexer(deps: AppDeps) {
   const head = await deps.publicClient.getBlockNumber({ cacheTime: 0 }); // never a cached head
   const safe = head - BigInt(deps.chain.confirmations);
   const summary: { stream: string; from: string; to: string; logs: number }[] = [];
+  const errors: { stream: string; error: string }[] = [];
+  const reorgs: { stream: string; block: string; rewoundTo: string }[] = [];
+  const hashes = new Map<bigint, string>();
+  const hashAt = async (n: bigint) => {
+    if (!hashes.has(n)) hashes.set(n, lc((await deps.publicClient.getBlock({ blockNumber: n })).hash));
+    return hashes.get(n)!;
+  };
 
+  // each stream on its own: one failing stream must not hold the others back
   for (const st of streamsOf(deps)) {
+    try {
+      const r = await indexStream(deps, st, safe, hashAt);
+      if (r.reorg) reorgs.push({ stream: st.stream, ...r.reorg });
+      if (r.range) summary.push({ stream: st.stream, ...r.range });
+    } catch (e) {
+      errors.push({ stream: st.stream, error: (e as Error).message.slice(0, 300) });
+    }
+  }
+  if ((errors.length || reorgs.length) && deps.telegram?.opsChatId) {
+    const lines = [...reorgs.map((r) => `reorg on ${r.stream} at block ${r.block}: rewound to ${r.rewoundTo}; events from orphaned blocks may remain in chain_events, review them`), ...errors.map((e) => `${e.stream}: ${e.error}`)];
+    await deps.notify(deps.telegram.opsChatId, `Indexer: ${lines.join("\n")}`);
+  }
+  return { head: head.toString(), safe: safe.toString(), streams: summary, ...(errors.length ? { errors } : {}), ...(reorgs.length ? { reorgs } : {}) };
+}
+
+async function indexStream(
+  deps: AppDeps,
+  st: { stream: string; address: Address; abi: Abi },
+  safe: bigint,
+  hashAt: (n: bigint) => Promise<string>,
+): Promise<{ range?: { from: string; to: string; logs: number }; reorg?: { block: string; rewoundTo: string } }> {
+  {
     const [cur] = await deps.db.select().from(cursors).where(and(eq(cursors.chainId, deps.chain.chainId), eq(cursors.stream, st.stream)));
-    const from = cur && cur.block > 0n ? cur.block + 1n : deps.chain.startBlock;
-    if (from > safe) continue;
+    let from = cur && cur.block > 0n ? cur.block + 1n : deps.chain.startBlock;
+    let reorg: { block: string; rewoundTo: string } | undefined;
+    // the block this cursor ended on must still be canonical; otherwise step back and index again
+    if (cur?.blockHash && cur.block > 0n && (await hashAt(cur.block)) !== cur.blockHash) {
+      const back = cur.block > deps.chain.startBlock + REORG_REWIND ? cur.block - REORG_REWIND : deps.chain.startBlock;
+      reorg = { block: cur.block.toString(), rewoundTo: back.toString() };
+      from = back;
+    }
+    if (from > safe) return { reorg };
     const to = safe < from + MAX_RANGE - 1n ? safe : from + MAX_RANGE - 1n;
 
     const logs = await deps.publicClient.getLogs({ address: st.address, fromBlock: from, toBlock: to });
@@ -77,6 +116,7 @@ export async function runIndexer(deps: AppDeps) {
       }
     }
     const pre = await prefetch(deps, decoded);
+    const toHash = await hashAt(to);
 
     await deps.db.transaction(async (tx) => {
       for (const d of decoded) {
@@ -96,12 +136,11 @@ export async function runIndexer(deps: AppDeps) {
       }
       await tx
         .insert(cursors)
-        .values({ chainId: deps.chain.chainId, stream: st.stream, block: to })
-        .onConflictDoUpdate({ target: [cursors.chainId, cursors.stream], set: { block: to } });
+        .values({ chainId: deps.chain.chainId, stream: st.stream, block: to, blockHash: toHash })
+        .onConflictDoUpdate({ target: [cursors.chainId, cursors.stream], set: { block: to, blockHash: toHash } });
     });
-    summary.push({ stream: st.stream, from: from.toString(), to: to.toString(), logs: decoded.length });
+    return { range: { from: from.toString(), to: to.toString(), logs: decoded.length }, reorg };
   }
-  return { head: head.toString(), safe: safe.toString(), streams: summary };
 }
 
 // ------------------------------------------------------------------ chain reads done outside the transaction
@@ -303,7 +342,8 @@ async function project(deps: AppDeps, tx: Tx, d: Decoded, p: Prefetched) {
         .values({ keyHash, plan: "paid", paidUntil: new Date(time.getTime() + months * 30 * 86_400_000) })
         .onConflictDoUpdate({
           target: apiKeys.keyHash,
-          set: { plan: "paid", paidUntil: sql`greatest(coalesce(${apiKeys.paidUntil}, now()), ${time}) + make_interval(days => ${months * 30})` },
+          // postgres.js cannot bind a Date inside a raw sql fragment: pass ISO text and cast
+          set: { plan: "paid", paidUntil: sql`greatest(coalesce(${apiKeys.paidUntil}, now()), ${time.toISOString()}::timestamptz) + make_interval(days => ${months * 30})` },
         });
       break;
     }

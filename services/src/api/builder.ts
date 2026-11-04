@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
   keccak256,
-  recoverMessageAddress,
+  recoverTypedDataAddress,
   toHex,
   type Address,
   type Hex,
@@ -60,14 +60,64 @@ export async function requestCalldata(deps: AppDeps, ref: AgentRef, version: Hex
   };
 }
 
-export const endpointMessage = (chainId: number, requestId: string, endpoint: string) =>
-  `Bollard: set the BATP endpoint for request ${requestId} on chain ${chainId} to ${endpoint}`;
+/**
+ * EIP-712 typed data for the two builder actions (security review: the old personal_sign texts had no domain,
+ * expiry or nonce, so an old setEndpoint signature could be replayed to revert the endpoint and fetch the token).
+ * Domain binds the chain and the RatingRegistry; every signature carries a deadline at most an hour out, and
+ * setEndpoint signatures must carry a strictly newer issuedAt than the last one accepted for the request.
+ */
+export const EIP712_TYPES = {
+  SetEndpoint: [
+    { name: "requestId", type: "uint256" },
+    { name: "endpoint", type: "string" },
+    { name: "issuedAt", type: "uint64" },
+    { name: "deadline", type: "uint64" },
+  ],
+  ReadFixList: [
+    { name: "ratingId", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+  ],
+} as const;
+
+/** Longest a signed builder action may stay valid, and how far ahead of the server clock issuedAt may be. */
+export const MAX_DEADLINE_S = 3600;
+const MAX_CLOCK_SKEW_S = 300;
+
+export const eip712Domain = (deps: Pick<AppDeps, "chain">) =>
+  ({ name: "Bollard", version: "1", chainId: deps.chain.chainId, verifyingContract: getAddress(deps.chain.contracts.ratingRegistry) }) as const;
+
+export const setEndpointTypedData = (deps: Pick<AppDeps, "chain">, m: { requestId: string; endpoint: string; issuedAt: number; deadline: number }) => ({
+  domain: eip712Domain(deps),
+  types: EIP712_TYPES,
+  primaryType: "SetEndpoint" as const,
+  message: { requestId: BigInt(m.requestId), endpoint: m.endpoint, issuedAt: BigInt(m.issuedAt), deadline: BigInt(m.deadline) },
+});
+
+export const fixListTypedData = (deps: Pick<AppDeps, "chain">, m: { ratingId: string; deadline: number }) => ({
+  domain: eip712Domain(deps),
+  types: EIP712_TYPES,
+  primaryType: "ReadFixList" as const,
+  message: { ratingId: BigInt(m.ratingId), deadline: BigInt(m.deadline) },
+});
+
+const nowS = (deps: AppDeps) => Math.floor(deps.now() / 1000);
+
+/** Same chain as the domain, deadline not passed and at most an hour out. */
+function checkWindow(deps: AppDeps, chainId: number, deadline: number) {
+  if (chainId !== deps.chain.chainId) throw new TRPCError({ code: "BAD_REQUEST", message: `this API serves chain ${deps.chain.chainId}` });
+  const now = nowS(deps);
+  if (deadline < now) throw new TRPCError({ code: "FORBIDDEN", message: "signature expired; sign again" });
+  if (deadline > now + MAX_DEADLINE_S) throw new TRPCError({ code: "BAD_REQUEST", message: `deadline must be within ${MAX_DEADLINE_S / 60} minutes` });
+}
 
 /**
- * The payer names the endpoint the harness will test, by signing endpointMessage. Returns the per-run bearer
- * token the endpoint should accept (doc §5.1).
+ * The payer names the endpoint the harness will test, by signing SetEndpoint typed data. Returns the per-run
+ * bearer token the endpoint should accept (doc §5.1).
  */
-export async function setEndpoint(deps: AppDeps, i: { chainId: number; requestId: string; endpoint: string; signature: Hex }) {
+export async function setEndpoint(
+  deps: AppDeps,
+  i: { chainId: number; requestId: string; endpoint: string; issuedAt: number; deadline: number; signature: Hex },
+) {
   const u = (() => {
     try {
       return new URL(i.endpoint);
@@ -78,20 +128,40 @@ export async function setEndpoint(deps: AppDeps, i: { chainId: number; requestId
   if (u.protocol !== "https:" && !(deps.allowHttpEndpoints && u.protocol === "http:")) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "endpoint must be https" });
   }
+  checkWindow(deps, i.chainId, i.deadline);
+  if (i.issuedAt > nowS(deps) + MAX_CLOCK_SKEW_S || i.issuedAt > i.deadline) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "issuedAt is in the future" });
+  }
   const [req] = await deps.db
     .select()
     .from(runRequests)
     .where(and(eq(runRequests.chainId, i.chainId), eq(runRequests.requestId, i.requestId)));
   if (!req) throw new TRPCError({ code: "NOT_FOUND", message: "request not indexed yet; try again in a minute" });
   if (req.status === "rated" || req.status === "refunded") throw new TRPCError({ code: "CONFLICT", message: `request is ${req.status}` });
-  const signer = await recoverMessageAddress({ message: endpointMessage(i.chainId, i.requestId, i.endpoint), signature: i.signature });
+  const signer = await recoverTypedDataAddress({ ...setEndpointTypedData(deps, i), signature: i.signature });
   if (lc(signer) !== lc(req.payer)) throw new TRPCError({ code: "FORBIDDEN", message: "signature is not from the payer" });
-  const token = req.runToken ?? randomBytes(32).toString("hex");
-  await deps.db
+  // Replay guard: only a signature issued after the last accepted one may change the endpoint (checked in the
+  // same statement, so two concurrent submissions cannot both pass). The token is minted once and kept.
+  const [row] = await deps.db
     .update(runRequests)
-    .set({ endpoint: u.toString().replace(/\/$/, ""), runToken: token, updatedAt: new Date(deps.now()) })
-    .where(and(eq(runRequests.chainId, i.chainId), eq(runRequests.requestId, i.requestId)));
-  return { ok: true as const, runToken: token };
+    .set({
+      endpoint: u.toString().replace(/\/$/, ""),
+      endpointSignedAt: i.issuedAt,
+      runToken: sql`coalesce(${runRequests.runToken}, ${randomBytes(32).toString("hex")})`,
+      updatedAt: new Date(deps.now()),
+    })
+    .where(
+      and(
+        eq(runRequests.chainId, i.chainId),
+        eq(runRequests.requestId, i.requestId),
+        or(isNull(runRequests.endpointSignedAt), lt(runRequests.endpointSignedAt, i.issuedAt)),
+      ),
+    )
+    .returning({ runToken: runRequests.runToken });
+  if (!row?.runToken) {
+    throw new TRPCError({ code: "CONFLICT", message: "a newer endpoint signature was already accepted; sign again" });
+  }
+  return { ok: true as const, runToken: row.runToken };
 }
 
 export async function runStatus(deps: AppDeps, chainId: number, requestId: string) {
@@ -119,13 +189,12 @@ export async function runStatus(deps: AppDeps, chainId: number, requestId: strin
   };
 }
 
-export const fixListMessage = (chainId: number, ratingId: string) => `Bollard: show the fix list for rating ${ratingId} on chain ${chainId}`;
-
 /** Owner-only detail: which public cases lost and how, plus holdout loss counts per family. */
-export async function fixList(deps: AppDeps, i: { chainId: number; ratingId: string; signature: Hex }) {
+export async function fixList(deps: AppDeps, i: { chainId: number; ratingId: string; deadline: number; signature: Hex }) {
+  checkWindow(deps, i.chainId, i.deadline);
   const rating = await ratingById(deps, i.chainId, i.ratingId);
   if (!rating) throw new TRPCError({ code: "NOT_FOUND", message: "rating not found" });
-  const signer = await recoverMessageAddress({ message: fixListMessage(i.chainId, i.ratingId), signature: i.signature });
+  const signer = await recoverTypedDataAddress({ ...fixListTypedData(deps, i), signature: i.signature });
   const allowed = (await deps.publicClient.readContract({
     address: getAddress(rating.agentRegistry) as Address,
     abi: identityRegistryAbi,

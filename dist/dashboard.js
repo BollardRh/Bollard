@@ -674,11 +674,19 @@
         const endpoint = val("endpoint").replace(/\/$/, "");
         if (!/^\d+$/.test(requestId)) throw new Error("Enter the request id from step 04.");
         if (!/^https:\/\//.test(endpoint)) throw new Error("The endpoint must start with https://");
-        const message = cfg.messages.endpoint.replace("{requestId}", requestId).replace("{endpoint}", endpoint);
-        const signature = await w.signMessage(message);
+        // EIP-712 SetEndpoint: valid for 10 minutes; issuedAt must be newer than the last accepted signature.
+        const issuedAt = Math.floor(Date.now() / 1000);
+        const deadline = issuedAt + 600;
+        const td = cfg.typedData;
+        const signature = await w.signTypedData({
+          domain: td.domain,
+          types: td.types,
+          primaryType: td.primaryTypes.endpoint,
+          message: { requestId, endpoint, issuedAt, deadline },
+        });
         for (let i = 0; ; i++) {
           try {
-            const r = await api.mutate("builder.setEndpoint", { chainId: cfg.chainId, requestId, endpoint, signature });
+            const r = await api.mutate("builder.setEndpoint", { chainId: cfg.chainId, requestId, endpoint, issuedAt, deadline, signature });
             document.querySelector("#token-box").innerHTML = `<div class="token"><small>RUN TOKEN · your endpoint should accept this Bearer token</small><code>${esc(r.runToken)}</code><button class="secondary" type="button" data-copy="${esc(r.runToken)}">Copy</button></div>`;
             log("Endpoint set. Nodes pick the run up within a few minutes.", "ok");
             return;
@@ -738,8 +746,10 @@
     try {
       const w = await loadWallet();
       if (!w.connected()) await w.connect({ chainId: cfg.chainId, network: cfg.network, rpcUrl: cfg.rpcUrl, explorer: cfg.explorer });
-      const signature = await w.signMessage(cfg.messages.fixList.replace("{ratingId}", ratingId));
-      const f = await api.mutate("builder.fixList", { chainId: cfg.chainId, ratingId, signature });
+      const deadline = Math.floor(Date.now() / 1000) + 600; // EIP-712 ReadFixList, valid for 10 minutes
+      const td = cfg.typedData;
+      const signature = await w.signTypedData({ domain: td.domain, types: td.types, primaryType: td.primaryTypes.fixList, message: { ratingId, deadline } });
+      const f = await api.mutate("builder.fixList", { chainId: cfg.chainId, ratingId, deadline, signature });
       box.innerHTML = f.failedCases.length
         ? `<div class="rows">${f.failedCases
             .map(

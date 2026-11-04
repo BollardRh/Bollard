@@ -102,6 +102,32 @@ export async function signMessage(message: string): Promise<Hex> {
   return wallet().signMessage({ message, account: account! });
 }
 
+/** EIP-712 typed data as the API's config() describes it; uint fields may be passed as decimal strings or numbers. */
+export interface TypedDataRequest {
+  domain: { name: string; version: string; chainId: number; verifyingContract: Address };
+  types: Record<string, readonly { name: string; type: string }[]>;
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
+/** eth_signTypedData_v4 with the connected account. uint* fields are converted to bigint first. */
+export async function signTypedData(req: TypedDataRequest): Promise<Hex> {
+  const fields = req.types[req.primaryType];
+  if (!fields) throw new Error(`Unknown typed-data type ${req.primaryType}`);
+  const message: Record<string, unknown> = {};
+  for (const f of fields) {
+    const v = req.message[f.name];
+    message[f.name] = /^uint\d*$/.test(f.type) ? BigInt(v as string | number | bigint) : v;
+  }
+  return wallet().signTypedData({
+    account: account!,
+    domain: req.domain,
+    types: req.types as Record<string, { name: string; type: string }[]>,
+    primaryType: req.primaryType,
+    message,
+  });
+}
+
 const runRequested = parseAbi([
   "event RunRequested(uint256 indexed requestId, address indexed agentRegistry, uint256 indexed agentId, bytes32 versionHash, address payer, uint256 fee)",
 ]);

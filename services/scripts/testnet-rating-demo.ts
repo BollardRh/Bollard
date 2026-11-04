@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createPublicClient, createWalletClient, defineChain, http, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { endpointMessage } from "../src/api/builder.ts";
+import { EIP712_TYPES } from "../src/api/builder.ts";
 import { erc20Abi, ratingRegistryAbi } from "../src/chain/abis.ts";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
@@ -83,8 +83,15 @@ for (let i = 0; ; i++) {
   await sleep(6000);
 }
 const endpoint = `${API}/api/mock-agents/${AGENT}`;
-const signature = await owner.signMessage({ message: endpointMessage(46630, rid, endpoint) });
-await trpc("builder.setEndpoint", { chainId: 46630, requestId: rid, endpoint, signature }, true);
+const issuedAt = Math.floor(Date.now() / 1000);
+const deadline = issuedAt + 600;
+const signature = await owner.signTypedData({
+  domain: { name: "Bollard", version: "1", chainId: 46630, verifyingContract: registry },
+  types: EIP712_TYPES,
+  primaryType: "SetEndpoint",
+  message: { requestId: requestId as bigint, endpoint, issuedAt: BigInt(issuedAt), deadline: BigInt(deadline) },
+});
+await trpc("builder.setEndpoint", { chainId: 46630, requestId: rid, endpoint, issuedAt, deadline, signature }, true);
 console.log(`endpoint set: ${endpoint}`);
 
 // 4. follow the run

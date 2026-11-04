@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
@@ -10,7 +10,8 @@ import { appRouter } from "./router.ts";
 import { rateLimit, trpcCalls } from "./rateLimit.ts";
 import { checkOnChain, latestRating, searchAgents } from "./ratings.ts";
 import { config, recentRatings, stats } from "./reads.ts";
-import { nodeRoutes } from "./node.ts";
+import { jsonBig, nodeRoutes } from "./node.ts";
+import { corpusCandidates } from "../db/schema.ts";
 import { createBot } from "./bot.ts";
 import { mockAgentApp } from "../mock-agents/server.ts";
 import { runIndexer } from "../workers/indexer.ts";
@@ -148,11 +149,13 @@ export function createApp(deps: AppDeps) {
     }
     return vaultSecret.value;
   };
+  const opsAuthorized = async (secret: string) => {
+    if (!secret) return false;
+    const fromVault = await vaultCronSecret();
+    return Boolean((deps.cronSecret && safeEqual(secret, deps.cronSecret)) || (fromVault && safeEqual(secret, fromVault)));
+  };
   app.post("/api/cron/:job", async (c) => {
-    const secret = c.req.header("x-cron-secret") ?? "";
-    const fromVault = secret ? await vaultCronSecret() : undefined;
-    const ok = (deps.cronSecret && safeEqual(secret, deps.cronSecret)) || (fromVault && safeEqual(secret, fromVault));
-    if (!secret || !ok) return c.json({ error: "forbidden" }, 403);
+    if (!(await opsAuthorized(c.req.header("x-cron-secret") ?? ""))) return c.json({ error: "forbidden" }, 403);
     const name = c.req.param("job");
     if (!Object.hasOwn(CRON_JOBS, name)) return c.json({ error: "unknown job" }, 404);
     const job = CRON_JOBS[name]!;
@@ -169,6 +172,43 @@ export function createApp(deps: AppDeps) {
     return c.body(JSON.stringify({ ok: true, ms: deps.now() - started, result }, (_, v) => (typeof v === "bigint" ? v.toString() : v)), 200, {
       "content-type": "application/json",
     });
+  });
+
+  // ---------------------------------------------------------------- corpus curation (ops only, same secret as cron)
+  // Arena wins arrive as corpus_candidates. A curator reads them here and marks each one public, holdout or
+  // rejected; turning one into a case is a corpus edit plus publishCorpus through the timelock.
+  app.use("/api/admin/*", async (c, next) => {
+    if (!(await opsAuthorized(c.req.header("x-cron-secret") ?? ""))) return c.json({ error: "forbidden" }, 403);
+    await next();
+  });
+  app.get("/api/admin/candidates", async (c) => {
+    const status = c.req.query("status");
+    const rows = await deps.db
+      .select()
+      .from(corpusCandidates)
+      .where(status ? eq(corpusCandidates.status, status as "pending") : undefined)
+      .orderBy(desc(corpusCandidates.id))
+      .limit(100);
+    return c.body(jsonBig(rows.map(({ transcript, ...r }) => ({ ...r, messages: ((transcript as { messages?: unknown[] })?.messages ?? []).length }))), 200, {
+      "content-type": "application/json",
+    });
+  });
+  app.get("/api/admin/candidates/:id", async (c) => {
+    if (!/^\d{1,18}$/.test(c.req.param("id"))) return c.json({ error: "bad id" }, 400);
+    const [row] = await deps.db.select().from(corpusCandidates).where(eq(corpusCandidates.id, BigInt(c.req.param("id"))));
+    return row ? c.body(jsonBig(row), 200, { "content-type": "application/json" }) : c.json({ error: "not found" }, 404);
+  });
+  app.post("/api/admin/candidates/:id", async (c) => {
+    if (!/^\d{1,18}$/.test(c.req.param("id"))) return c.json({ error: "bad id" }, 400);
+    const body = (await c.req.json().catch(() => ({}))) as { status?: string; family?: number };
+    if (!["pending", "public", "holdout", "rejected"].includes(String(body.status))) return c.json({ error: "status must be pending, public, holdout or rejected" }, 400);
+    if (body.family !== undefined && !(Number.isInteger(body.family) && body.family >= 0 && body.family <= 7)) return c.json({ error: "family must be 0-7" }, 400);
+    const [row] = await deps.db
+      .update(corpusCandidates)
+      .set({ status: body.status as "pending", ...(body.family !== undefined ? { familyGuess: body.family } : {}) })
+      .where(eq(corpusCandidates.id, BigInt(c.req.param("id"))))
+      .returning({ id: corpusCandidates.id, status: corpusCandidates.status, familyGuess: corpusCandidates.familyGuess });
+    return row ? c.body(jsonBig(row), 200, { "content-type": "application/json" }) : c.json({ error: "not found" }, 404);
   });
 
   // ---------------------------------------------------------------- Telegram
