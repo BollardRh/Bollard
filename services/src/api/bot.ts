@@ -12,10 +12,10 @@ import { latestRating, searchAgents, type RatingView } from "./ratings.ts";
  */
 
 const BOT_INFO = {
-  id: 1,
+  id: 9297305941,
   is_bot: true,
-  first_name: "Bollard",
-  username: "BollardRatingsBot",
+  first_name: "bollard",
+  username: "bollardrh_bot",
   can_join_groups: true,
   can_read_all_group_messages: false,
   supports_inline_queries: false,
