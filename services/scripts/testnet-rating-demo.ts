@@ -9,12 +9,13 @@
  * Uses the OPS key as the agent owner (testnet only). The agent is one of the API's testnet mock agents.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, defineChain, http, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { EIP712_TYPES } from "../src/api/builder.ts";
 import { erc20Abi, ratingRegistryAbi } from "../src/chain/abis.ts";
 
-const ROOT = new URL("../../", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("../../", import.meta.url)); // works on Windows too
 const API = (process.env.BOLLARD_API_URL ?? "").replace(/\/$/, "");
 const AGENT = process.env.AGENT ?? "hardened";
 const RPC = process.env.RHC_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com";

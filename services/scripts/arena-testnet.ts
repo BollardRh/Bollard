@@ -4,6 +4,7 @@
  *   set -a; source .env.testnet.local; set +a
  *   BOLLARD_API_URL=https://<project>.vercel.app bun services/scripts/arena-testnet.ts setup
  *   BOLLARD_API_URL=https://<project>.vercel.app bun services/scripts/arena-testnet.ts attack <arenaId> ["message"]
+ *   BOLLARD_API_URL=https://<project>.vercel.app bun services/scripts/arena-testnet.ts reclaim-test [seconds]
  *
  * setup   (OPS key, as funder) registers two house agents on ERC-8004 and opens two arenas:
  *           hardened house agent, 100 tUSDG bounty (the real challenge)
@@ -12,14 +13,17 @@
  *         Prints the SQL that registers the house agents with the arena engine.
  * attack  (ARENA_ATTACKER key, created and funded on first use) mints tBLRD, opens an attempt, reveals the
  *         salt to the live API and sends one message. Shows the reply, the canary transfer and the payout.
+ * reclaim-test  (OPS key) opens a 10 tUSDG arena for [seconds] (default 600), checks reclaim is refused while
+ *         it is open, then reclaims after it ends and checks the bounty and canary come back.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, defineChain, http, keccak256, parseAbi, parseEther, toHex, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arenaBountyAbi, erc20Abi } from "../src/chain/abis.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../src/arena/engine.ts";
 
-const ROOT = new URL("../../", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("../../", import.meta.url)); // works on Windows too
 const API = (process.env.BOLLARD_API_URL ?? "").replace(/\/$/, "");
 const RPC = process.env.RHC_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com";
 if (!API || !process.env.OPS_PRIVATE_KEY || !process.env.POSTER_ADDRESS) throw new Error("set BOLLARD_API_URL and source .env.testnet.local");
@@ -140,7 +144,40 @@ async function attack(arenaId: string, text?: string) {
   console.log(`attacker tUSDG +${Number(after - before) / 1e6} (won: ${r.won}${r.winTx ? `, tx ${r.winTx}` : ""})`);
 }
 
+/** Opens a short arena as OPS, checks reclaim is refused while it is open, waits it out, reclaims, checks the refund. */
+async function reclaimTest(seconds: bigint) {
+  const memo = JSON.parse(readFileSync(MEMO, "utf8")) as Record<string, string>;
+  const bounty = 10_000_000n;
+  const canary = 1_000_000n;
+  await waitTx(await opsWallet.writeContract({ address: usdg, abi: mintAbi, functionName: "mint", args: [ops.address, bounty + canary] }), "mint tUSDG");
+  await waitTx(await opsWallet.writeContract({ address: usdg, abi: erc20Abi, functionName: "approve", args: [arena, bounty + canary] }), "approve ArenaBounty");
+  const { result, request } = await pub.simulateContract({
+    address: arena,
+    abi: arenaBountyAbi,
+    functionName: "openArena",
+    args: [usdg, bounty, usdg, canary, process.env.POSTER_ADDRESS as Address, BigInt(memo.hardenedAgentId!), seconds],
+    account: ops,
+  });
+  await waitTx(await opsWallet.writeContract(request), "openArena (reclaim test)");
+  const [id] = result as unknown as [bigint, Address];
+  const endsAt = (await pub.readContract({ address: arena, abi: arenaBountyAbi, functionName: "arenas", args: [id] }))[4];
+  console.log(`arena ${id} ends at ${new Date(Number(endsAt) * 1000).toISOString()}`);
+
+  const early = await pub.simulateContract({ address: arena, abi: arenaBountyAbi, functionName: "reclaim", args: [id, [usdg]], account: ops }).catch((e: Error) => e);
+  if (!(early instanceof Error) || !/ArenaOpen/.test(early.message)) throw new Error("reclaim while open was not refused with ArenaOpen");
+  console.log("  reclaim while open: refused (ArenaOpen)");
+
+  while ((await pub.getBlock()).timestamp < endsAt) await sleep(15_000);
+  const before = (await pub.readContract({ address: usdg, abi: erc20Abi, functionName: "balanceOf", args: [ops.address] })) as bigint;
+  await waitTx(await opsWallet.writeContract({ address: arena, abi: arenaBountyAbi, functionName: "reclaim", args: [id, [usdg]], account: ops }), `reclaim(${id}, [tUSDG])`);
+  const after = (await pub.readContract({ address: usdg, abi: erc20Abi, functionName: "balanceOf", args: [ops.address] })) as bigint;
+  const settled = (await pub.readContract({ address: arena, abi: arenaBountyAbi, functionName: "arenas", args: [id] }))[5];
+  if (after - before !== bounty + canary || !settled) throw new Error(`refund ${after - before}, settled ${settled}`);
+  console.log(`arena ${id} reclaimed: OPS +${Number(after - before) / 1e6} tUSDG (bounty + canary), settled`);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "setup") await setup();
 else if (cmd === "attack" && rest[0]) await attack(rest[0], rest[1]);
-else throw new Error("usage: arena-testnet.ts setup | attack <arenaId> [message]");
+else if (cmd === "reclaim-test") await reclaimTest(BigInt(rest[0] ?? "600"));
+else throw new Error("usage: arena-testnet.ts setup | attack <arenaId> [message] | reclaim-test [seconds]");
