@@ -1,5 +1,5 @@
 /*
- * Bollard dashboard: live data from the Bollard API (same origin) on Robinhood Chain testnet.
+ * Bollard dashboard: live data from the Bollard API (same origin) on Robinhood Chain.
  * Hash routes: #overview, #lookup, #agent/<chainId>/<agentId>, #families, #builders, #nodes, #arena.
  * Wallet actions load dist/assets/wallet/wallet.mjs on demand (built from services/src/web/wallet.ts).
  */
@@ -137,7 +137,7 @@
       `<div class="stats">
         ${stat("Usable ratings", ICONS.grid, stats.activeRatings, "Active and not expired")}
         ${stat("Attack families", ICONS.doc, 8, stats.corpus ? `${stats.corpus.caseCount} cases in the live corpus` : "Corpus not published")}
-        ${stat("Network", ICONS.cube, cfg.testnet ? "Testnet" : "Mainnet", `${cfg.network} · chain ${cfg.chainId}`)}
+        ${stat("Network", ICONS.cube, "Mainnet", `${cfg.network} · chain ${cfg.chainId}`)}
         ${stat("Test nodes", ICONS.node, stats.activeKeys, `${stats.attesters} bonded attester${stats.attesters === 1 ? "" : "s"}`)}
       </div>
       <div class="content-grid">
@@ -297,13 +297,13 @@
             return `<li><span class="mono" title="${esc(k.key)}">${esc(short(k.key))}</span>${state}${verdict}<small>${k.lastSeen ? `seen ${esc(dateTime(k.lastSeen))}` : "not seen"}</small></li>`;
           })
           .join("");
-        return `<article class="glass panel node-card"><div class="panel-head"><div><h2>Attester ${await explorer("address", a.address)}</h2><p>Bond ${esc(units(a.bond, 18))} tBLRD${a.unbonding !== "0" ? ` · unbonding ${esc(units(a.unbonding, 18))}` : ""}</p></div>${a.jailed ? pill("Jailed", "bad") : pill("Bonded", "ok")}</div><ul class="key-list">${keys || "<li>No enclave keys</li>"}</ul></article>`;
+        return `<article class="glass panel node-card"><div class="panel-head"><div><h2>Attester ${await explorer("address", a.address)}</h2><p>Bond ${esc(units(a.bond, cfg.stakeDecimals))} ${esc(cfg.stakeSymbol)}${a.unbonding !== "0" ? ` · unbonding ${esc(units(a.unbonding, cfg.stakeDecimals))}` : ""}</p></div>${a.jailed ? pill("Jailed", "bad") : pill("Bonded", "ok")}</div><ul class="key-list">${keys || "<li>No enclave keys</li>"}</ul></article>`;
       }),
     );
     return (
       header("Test nodes", `Bonded attesters and their attested enclave keys on ${esc(cfg.network)}.`) +
       (rows.length ? `<div class="node-grid">${rows.join("")}</div>` : `<section class="glass panel">${empty("No attesters yet", "Attesters appear here once they bond.")}</section>`) +
-      `<section class="glass notice"><div><strong>${cfg.testnet ? "Testnet nodes use the dev attestor." : "Nodes run in Intel TDX enclaves."}</strong><p>${cfg.testnet ? "Their quotes are synthetic and only allowed on testnet. Mainnet nodes run in Intel TDX confidential VMs." : "Each key is bound to an allowed OS image and harness build."}</p></div><a href="system.html">How the system works ↗</a></section>`
+      `<section class="glass notice"><div><strong>Nodes run in Intel TDX enclaves.</strong><p>Each key is bound to an allowed OS image and harness build.</p></div><a href="system.html">How the system works ↗</a></section>`
     );
   }
 
@@ -352,7 +352,7 @@
             ${kv("Escrowed", esc(fmt(a.bounty, a.tokenDecimals, a.tokenSymbol)))}
             ${kv("Canary wallet", `${await explorer("address", a.canary)} · ${canary}`)}
             ${kv(a.status === "open" ? "Ends" : "Ended", esc(dateTime(a.endsAt)))}
-            ${kv("Attempt cost", `${esc(units(a.attemptBurn, 18))} tBLRD burned · lasts ${esc(Math.round(a.attemptWindowSec / 60))} min`)}
+            ${kv("Attempt cost", `${esc(units(a.attemptBurn, cfg.stakeDecimals))} ${esc(cfg.stakeSymbol)} burned · lasts ${esc(Math.round(a.attemptWindowSec / 60))} min`)}
             ${kv("Limits", `${esc(a.limits.messages)} messages per attempt · 1 attempt per wallet per ${esc(a.limits.cooldownMin)} min`)}
             ${kv("Activity", `${esc(a.stats.attempts)} attempts · ${esc(a.stats.messages)} messages`)}
             ${a.winner ? kv("Winner", await explorer("address", a.winner)) : ""}
@@ -362,7 +362,7 @@
         <section class="glass panel"><div class="panel-head"><div><h2>Your attempt</h2><p>Win by getting the agent to send canary funds to your wallet.</p></div></div>
           ${open
             ? `<div class="step-row"><button class="primary" type="button" data-arena="connect">Connect wallet</button><span id="arena-wallet" class="step-status">Not connected</span></div>
-               <div class="step-row" id="attempt-row" hidden>${cfg.testnet ? `<button class="secondary" type="button" data-arena="faucet">Get test tBLRD</button>` : ""}<button class="primary" type="button" data-arena="attempt">Open attempt</button></div>
+               <div class="step-row" id="attempt-row" hidden><button class="primary" type="button" data-arena="attempt">Open attempt</button></div>
                <div id="chat" class="chat" hidden>
                  <div class="chat-head"><span id="chat-status" class="step-status"></span></div>
                  <div id="chat-log" class="chat-log" aria-live="polite"></div>
@@ -474,21 +474,15 @@
         }
         document.querySelector("#attempt-row").hidden = false;
       },
-      async faucet() {
-        const a = await api.query("arena.get", { arenaId: String(id) });
-        const w = await loadWallet();
-        await w.mintTestTokens(a.blrd, BigInt(a.attemptBurn) * 5n);
-        log(`Minted test tBLRD. Balance: ${units(String(await w.tokenBalance(a.blrd)), 18)}.`, "ok");
-      },
       async attempt() {
         const cfg = await config();
         const a = await api.query("arena.get", { arenaId: String(id) });
         const w = await loadWallet();
         const burn = BigInt(a.attemptBurn);
         if (burn > 0n) {
-          if ((await w.tokenBalance(a.blrd)) < burn) throw new Error(`You need ${units(a.attemptBurn, 18)} tBLRD to open an attempt.`);
+          if ((await w.tokenBalance(a.blrd)) < burn) throw new Error(`You need ${units(a.attemptBurn, cfg.stakeDecimals)} ${cfg.stakeSymbol} to open an attempt.`);
           if ((await w.allowance(a.blrd, cfg.contracts.arenaBounty)) < burn) {
-            log("Approve the tBLRD burn in your wallet…");
+            log(`Approve the ${cfg.stakeSymbol} burn in your wallet…`);
             await w.approve(a.blrd, cfg.contracts.arenaBounty, burn);
           }
         }
@@ -542,7 +536,7 @@
     return (
       header("For builders", "Request a crash rating for one version of your agent.") +
       `<div class="builder-grid">
-        <section class="glass panel"><div class="panel-head"><div><h2>Request a rating run</h2><p>${esc(cfg.network)} · fee ${esc(fee)} tUSDG</p></div>${pill(cfg.testnet ? "Testnet" : "Live", cfg.testnet ? "warn" : "ok")}</div>
+        <section class="glass panel"><div class="panel-head"><div><h2>Request a rating run</h2><p>${esc(cfg.network)} · fee ${esc(fee)} ${esc(cfg.feeSymbol)}</p></div>${pill("Live", "ok")}</div>
           <form id="builder-form" class="steps" autocomplete="off">
             <fieldset class="step"><legend><span>01</span> Wallet</legend>
               <div class="step-row"><button class="primary" type="button" data-act="connect">Connect wallet</button><span id="wallet-status" class="step-status">Not connected</span></div>
@@ -558,7 +552,7 @@
               <div class="wide form-actions"><button class="secondary" type="button" data-act="version">Compute version hash</button></div></div>
             </fieldset>
             <fieldset class="step"><legend><span>04</span> Pay and request</legend>
-              <div class="step-row">${cfg.testnet ? `<button class="secondary" type="button" data-act="faucet">Get ${esc(fee)} test tUSDG</button>` : ""}<button class="primary" type="button" data-act="request">Approve fee and request run</button></div>
+              <div class="step-row"><button class="primary" type="button" data-act="request">Approve fee and request run</button></div>
             </fieldset>
             <fieldset class="step"><legend><span>05</span> Test endpoint</legend>
               <div class="form-grid">${field("requestId", "Request id", "from step 04", 'inputmode="numeric"')}${field("endpoint", "BATP endpoint", "https://…", 'type="url"')}
@@ -574,7 +568,7 @@
         </section>
         <section class="glass panel"><h2>How a run works</h2>
           <div class="guide-list"><div><span>01</span><p>Your wallet owns an ERC-8004 agent.</p></div><div><span>02</span><p>You pay the run fee for one declared version.</p></div><div><span>03</span><p>Attested nodes test your endpoint over BATP/1.</p></div><div><span>04</span><p>A quorum signs; the rating lands on-chain with a fix list for you.</p></div></div>
-          <div class="fee-card"><small>RUN FEE</small><strong>${esc(fee)} <small>tUSDG</small></strong><p>Per version. Refunded if no rating lands within 14 days.</p></div>
+          <div class="fee-card"><small>RUN FEE</small><strong>${esc(fee)} <small>${esc(cfg.feeSymbol)}</small></strong><p>Per version. Refunded if no rating lands within 14 days.</p></div>
           <p class="fine-print">The harness sends <span class="mono">POST {endpoint}/batp/v1/step</span> with your run token as a Bearer header. See the BATP/1 section in the methodology.</p>
         </section>
       </div>`
@@ -641,12 +635,6 @@
         form.elements.versionHash.value = r.versionHash;
         save();
         log("Version hash computed.", "ok");
-      },
-      async faucet() {
-        const cfg = await config();
-        const w = await needWallet();
-        await w.mintTestTokens(cfg.contracts.feeToken, BigInt(cfg.runFee || "300000000"));
-        log(`Minted test tUSDG. Balance: ${units(String(await w.tokenBalance(cfg.contracts.feeToken)), cfg.feeDecimals)}.`, "ok");
       },
       async request() {
         const cfg = await config();
@@ -785,7 +773,7 @@
       const html =
         route === "overview" ? await overview()
         : route === "lookup" ? await lookup()
-        : route === "agent" ? await agentView(params[0] || "46630", params[1] || "")
+        : route === "agent" ? await agentView(params[0] || "4663", params[1] || "")
         : route === "families" ? await families()
         : route === "builders" ? await builders()
         : route === "nodes" ? await nodes()
@@ -794,7 +782,7 @@
       if (seq !== renderSeq) return;
       view.innerHTML = html;
       if (route === "lookup") bindLookup();
-      if (route === "agent") bindAgent(params[0] || "46630", params[1] || "");
+      if (route === "agent") bindAgent(params[0] || "4663", params[1] || "");
       if (route === "families") bindFamilies();
       if (route === "arena" && params[0]) bindArena(params[0]);
       if (route === "builders") {

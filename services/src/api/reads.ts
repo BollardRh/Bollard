@@ -18,7 +18,6 @@ export async function config(deps: AppDeps) {
   return {
     chainId: deps.chain.chainId,
     network: deps.chain.name,
-    testnet: deps.chain.chainId === 46630,
     explorer: deps.chain.explorer,
     rpcUrl: deps.chain.rpcUrl,
     contracts: deps.chain.contracts,
@@ -33,6 +32,10 @@ export async function config(deps: AppDeps) {
     },
     runFee: fee,
     feeDecimals: 6,
+    // ponytail: fees, bonds and arena attempts are all USDG until $BLRD launches; read symbols on-chain then.
+    feeSymbol: "USDG",
+    stakeSymbol: "USDG",
+    stakeDecimals: 6,
     families: families(deps),
     corpusRoot: deps.corpus.root,
   };

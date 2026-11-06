@@ -161,13 +161,6 @@ export async function registerAgent(identity: Address, agentURI: string): Promis
   throw new Error("Registered, but the new agent id was not found in the receipt.");
 }
 
-/** Testnet only: tUSDG has an open mint. */
-export async function mintTestTokens(token: Address, amount: bigint) {
-  const data = encodeFunctionData({ abi: parseAbi(["function mint(address to, uint256 amount)"]), functionName: "mint", args: [account!, amount] });
-  return send({ to: token, data });
-}
-
-/** Testnet only: tBLRD for arena attempt burns (same open mint as tUSDG). */
 export async function approve(token: Address, spender: Address, amount: bigint) {
   const data = encodeFunctionData({ abi: parseAbi(["function approve(address spender, uint256 amount) returns (bool)"]), functionName: "approve", args: [spender, amount] });
   return send({ to: token, data });

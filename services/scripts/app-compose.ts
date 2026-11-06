@@ -8,9 +8,10 @@
  * OPEN ITEM: check the field set against the dstack / Phala Cloud version the nodes run before mainnet.
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { composeHashOf } from "../src/attest/rtmr.ts";
 
-const dir = new URL("../../harness-node/", import.meta.url).pathname;
+const dir = fileURLToPath(new URL("../../harness-node/", import.meta.url)); // works on Windows too
 const compose = readFileSync(`${dir}docker-compose.yml`, "utf8");
 const dev = process.argv.includes("--dev");
 
@@ -32,7 +33,7 @@ const appCompose = {
   public_sysinfo: true,
   public_tcbinfo: true,
   no_instance_id: false,
-  allowed_envs: ["COORDINATOR_URL", "ATTESTER_ADDRESS", "HOLDOUT_KEY"], // chain, registries pinned in the compose
+  allowed_envs: ["COORDINATOR_URL", "ATTESTER_ADDRESS", "HOLDOUT_KEY", "HOLDOUT_B64"], // chain, registries pinned in the compose
 };
 
 const json = JSON.stringify(appCompose, null, 2) + "\n";

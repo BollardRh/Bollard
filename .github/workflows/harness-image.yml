@@ -1,0 +1,33 @@
+name: harness-image
+
+# Builds the harness node image that runs in the Phala TDX CVMs and pushes it to GHCR.
+# The pushed digest goes into harness-node/docker-compose.yml, and so into the compose hash governance allowlists.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["harness-node/Dockerfile", "services/src/**", "services/corpus/**", "services/package.json", "services/bun.lock"]
+
+jobs:
+  image:
+    if: github.repository == 'BollardRh/Bollard'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: harness-node/Dockerfile
+          push: true
+          provenance: false
+          tags: ghcr.io/bollardrh/bollard-harness:${{ github.sha }},ghcr.io/bollardrh/bollard-harness:latest
+      - run: echo "digest ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

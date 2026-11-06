@@ -20,7 +20,7 @@ import { JobRefused, openNodeChain } from "./jobCheck.ts";
  *   3. poll for jobs: lead runs and seals, co-sign verifies and signs, never re-querying the agent
  *
  * Env: COORDINATOR_URL, CHAIN_ID, RHC_RPC_URL, ATTESTERS_RHC, ATTESTER_ADDRESS, APP_COMPOSE_PATH,
- *      HOLDOUT_PATH + HOLDOUT_KEY (sealed secret), DEV_ATTESTOR, POLL_MS.
+ *      HOLDOUT_PATH or HOLDOUT_B64, + HOLDOUT_KEY (sealed secrets), DEV_ATTESTOR, POLL_MS.
  */
 
 const env = (k: string, d?: string) => {
@@ -30,10 +30,10 @@ const env = (k: string, d?: string) => {
 };
 
 async function main() {
-  const chainId = Number(env("CHAIN_ID", "46630"));
+  const chainId = Number(env("CHAIN_ID", "4663"));
   const registry = getAddress(env("ATTESTERS_RHC")) as Address;
   const ratingRegistry = getAddress(env("REGISTRY_RHC")) as Address;
-  const rpcUrl = env("RHC_RPC_URL", "https://rpc.testnet.chain.robinhood.com");
+  const rpcUrl = env("RHC_RPC_URL", "https://rpc.mainnet.chain.robinhood.com");
   const appCompose = readFileSync(env("APP_COMPOSE_PATH", "/app/app-compose.json"), "utf8");
   const composeHash = composeHashOf(appCompose);
   const dev = process.env.DEV_ATTESTOR === "1";
@@ -51,8 +51,14 @@ async function main() {
   const publicCases = corpus.cases.map((c) => c.case);
   let holdout: HoldoutSet | undefined;
   let commit: Hex;
-  if (process.env.HOLDOUT_PATH) {
-    const h = decryptHoldout(readFileSync(process.env.HOLDOUT_PATH), Buffer.from(env("HOLDOUT_KEY").replace(/^0x/, ""), "hex"));
+  // HOLDOUT_B64: the encrypted bundle as a Phala encrypted env (it is ~22 KB), so no volume has to be filled
+  const sealed = process.env.HOLDOUT_PATH
+    ? readFileSync(process.env.HOLDOUT_PATH)
+    : process.env.HOLDOUT_B64
+      ? Buffer.from(process.env.HOLDOUT_B64, "base64")
+      : undefined;
+  if (sealed) {
+    const h = decryptHoldout(sealed, Buffer.from(env("HOLDOUT_KEY").replace(/^0x/, ""), "hex"));
     holdout = { cases: h.cases, salt: h.salt };
     commit = h.commit;
   } else {

@@ -54,7 +54,7 @@ writeFileSync(
 // Security headers for every response. The site uses inline scripts and styles (scrolltide pages), so
 // script-src keeps 'unsafe-inline'; everything else is limited to this origin, Google Fonts and the chain RPC
 // the wallet bundle reads from.
-const RPC_ORIGIN = new URL(process.env.RHC_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com").origin;
+const RPC_ORIGIN = new URL(process.env.RHC_RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com").origin;
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",

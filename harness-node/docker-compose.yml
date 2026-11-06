@@ -6,19 +6,16 @@ services:
     restart: always
     environment:
       ROLE: harness
-      CHAIN_ID: "46630"
-      RHC_RPC_URL: https://rpc.testnet.chain.robinhood.com
+      CHAIN_ID: "4663"
+      RHC_RPC_URL: https://rpc.mainnet.chain.robinhood.com
       COORDINATOR_URL: ${COORDINATOR_URL}
       # pinned in the compose (and so in the compose hash), never operator-supplied
-      ATTESTERS_RHC: "0x6959413B747643Fd070c6A541354DB3FE9e6975a"
-      REGISTRY_RHC: "0x016889569C0A52Ea1B1ffa428E2fe346d36212dF"
+      ATTESTERS_RHC: "0x1d45D6feE8C1938605da73060022A992Bb016736"
+      REGISTRY_RHC: "0xC43A984c70b88ea334632479502Df728F700903D"
       ATTESTER_ADDRESS: ${ATTESTER_ADDRESS}
-      HOLDOUT_PATH: /holdout/holdout.enc
       HOLDOUT_KEY: ${HOLDOUT_KEY}
+      HOLDOUT_B64: ${HOLDOUT_B64}
       APP_COMPOSE_PATH: /app/app-compose.json
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock
       - /dstack/app-compose.json:/app/app-compose.json:ro
-      - holdout:/holdout:ro
-volumes:
-  holdout:

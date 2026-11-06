@@ -3,7 +3,8 @@
  * The output is committed with the site, so the static site needs no build step to serve it.
  *   bun services/scripts/build-wallet.ts
  */
-const ROOT = new URL("../../", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const ROOT = fileURLToPath(new URL("../../", import.meta.url)); // works on Windows too
 const result = await Bun.build({
   entrypoints: [`${ROOT}services/src/web/wallet.ts`],
   target: "browser",

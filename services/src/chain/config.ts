@@ -1,8 +1,8 @@
 import { getAddress, isAddress, type Address } from "viem";
 
 /**
- * Chain configuration from env. Robinhood Chain testnet (46630) by default; every value is per chain so a
- * mainnet or Base deployment is a second config, not a code change.
+ * Chain configuration from env. Robinhood Chain mainnet (4663) by default; every value is per chain so a
+ * Base deployment is a second config, not a code change.
  */
 export interface ChainConfig {
   chainId: number;
@@ -22,7 +22,7 @@ export interface ChainConfig {
   };
 }
 
-export const TESTNET_IDENTITY_8004: Address = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
+export const MAINNET_IDENTITY_8004: Address = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 
 const addr = (env: NodeJS.ProcessEnv, k: string, fallback?: Address): Address => {
   const v = env[k] ?? fallback;
@@ -32,11 +32,11 @@ const addr = (env: NodeJS.ProcessEnv, k: string, fallback?: Address): Address =>
 const optAddr = (env: NodeJS.ProcessEnv, k: string): Address | undefined => (env[k] && isAddress(env[k]!) ? getAddress(env[k]!) : undefined);
 
 export function chainConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ChainConfig {
-  const chainId = Number(env.CHAIN_ID ?? 46630);
+  const chainId = Number(env.CHAIN_ID ?? 4663);
   return {
     chainId,
-    name: env.CHAIN_NAME ?? (chainId === 46630 ? "Robinhood Chain Testnet" : `Chain ${chainId}`),
-    rpcUrl: env.RHC_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com",
+    name: env.CHAIN_NAME ?? (chainId === 4663 ? "Robinhood Chain" : `Chain ${chainId}`),
+    rpcUrl: env.RHC_RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com",
     explorer: env.EXPLORER_URL ?? "",
     confirmations: Number(env.CONFIRMATIONS ?? 20),
     startBlock: BigInt(env.START_BLOCK_RHC ?? 0),
@@ -45,7 +45,7 @@ export function chainConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ChainC
       attesterRegistry: addr(env, "ATTESTERS_RHC"),
       feeRouter: addr(env, "FEEROUTER_RHC"),
       feeToken: addr(env, "FEE_TOKEN_RHC"),
-      identity8004: addr(env, "IDENTITY_8004", TESTNET_IDENTITY_8004),
+      identity8004: addr(env, "IDENTITY_8004", MAINNET_IDENTITY_8004),
       arenaBounty: optAddr(env, "ARENA_RHC"),
       safeRatingGuard: optAddr(env, "GUARD_RHC"),
     },

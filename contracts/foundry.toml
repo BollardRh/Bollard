@@ -16,6 +16,7 @@ runs = 256
 
 [rpc_endpoints]
 rhc_testnet = "https://rpc.testnet.chain.robinhood.com"
+rhc_mainnet = "https://rpc.mainnet.chain.robinhood.com"
 
 [lint]
 lint_on_build = false
