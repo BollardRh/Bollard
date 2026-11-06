@@ -1,11 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Hex } from "viem";
 import { AttackCase } from "./schema.ts";
 import { leafOf, merkleRoot } from "./merkle.ts";
 
 /** Bundled deployments set BOLLARD_CORPUS_DIR; source checkouts use services/corpus/public. */
-export const PUBLIC_CORPUS_DIR = new URL("../../corpus/public/", import.meta.url).pathname;
+export const PUBLIC_CORPUS_DIR = fileURLToPath(new URL("../../corpus/public/", import.meta.url)); // works on Windows too
 
 const defaultDir = () => process.env.BOLLARD_CORPUS_DIR ?? PUBLIC_CORPUS_DIR;
 

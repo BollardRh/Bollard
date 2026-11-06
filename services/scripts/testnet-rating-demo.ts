@@ -23,9 +23,9 @@ if (!API || !process.env.OPS_PRIVATE_KEY) throw new Error("set BOLLARD_API_URL a
 
 const d = JSON.parse(readFileSync(`${ROOT}contracts/deployments/rhc-testnet.json`, "utf8")) as Record<string, string>;
 const chain = defineChain({ id: 46630, name: "Robinhood Chain Testnet", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } });
-const pub = createPublicClient({ chain, transport: http(RPC) });
+const pub = createPublicClient({ chain, transport: http(RPC, { timeout: 60_000, retryCount: 5 }) });
 const owner = privateKeyToAccount(process.env.OPS_PRIVATE_KEY as Hex);
-const wallet = createWalletClient({ chain, transport: http(RPC), account: owner });
+const wallet = createWalletClient({ chain, transport: http(RPC, { timeout: 60_000 }), account: owner });
 const identity = d.identity8004 as Address;
 const registry = d.ratingRegistry as Address;
 const usdg = d.tUSDG as Address;
