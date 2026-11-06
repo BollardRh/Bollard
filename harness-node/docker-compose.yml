@@ -2,7 +2,7 @@
 # fixes exactly which harness code holds an enclave key.
 services:
   harness:
-    image: ghcr.io/bollardrh/bollard-harness@sha256:REPLACE_WITH_RELEASE_DIGEST
+    image: ghcr.io/bollardrh/bollard-harness@sha256:c7342ba41d1895dcf52aff40e8403f397029aa2d9531fe09be7e7b57b47bffaf
     restart: always
     environment:
       ROLE: harness

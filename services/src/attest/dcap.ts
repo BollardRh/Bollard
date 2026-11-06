@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bytesToHex } from "viem";
 import { DEV_CHAINS, isDevQuote } from "./devAttestor.ts";
+import { parseTdxV4 } from "./tdx.ts";
 
 /**
  * Pluggable DCAP verifiers (doc §4.2): they check the quote's Intel signature chain and TCB status.
@@ -349,7 +350,7 @@ export function evaluateTdxTcb(input: QuoteTcbInputs, tcbInfo: TdxTcbInfo, qeIde
  * Phala Cloud's verifier. Passes only when the response says quote.verified === true AND the TCB status
  * computed from the response's Intel collateral is accepted (DEFAULT_ACCEPTED_TCB, or PHALA_TCB_ACCEPT).
  *   unavailable (DcapUnavailableError, retried): network error, timeout, 5xx, 429, a body that is not JSON,
- *     a checksum for some other quote, or a verified quote without parseable tcb_info / qe_identity
+ *     an answer whose measured fields are not this quote's, or a verified quote without parseable tcb_info / qe_identity
  *   rejection (false): any other non-2xx (Phala answers 400 for an invalid quote), verified !== true, no
  *     matching TCB level, module identity mismatch, or a TCB status outside the accepted set
  * OPEN ITEM: the collateral's Intel signatures and nextUpdate are not checked here; this still trusts Phala
@@ -382,14 +383,20 @@ export class PhalaCloudVerifier implements DcapVerifier {
     if (r.status >= 500 || r.status === 429) throw new DcapUnavailableError(`Phala verifier returned ${r.status}`);
     if (!r.ok) return { ok: false, detail: `Phala verifier returned ${r.status}` };
     const j = (await r.json().catch(() => null)) as {
-      quote?: { verified?: boolean } | null;
+      quote?: { verified?: boolean; body?: Record<string, string> } | null;
       checksum?: string | null;
       quote_collateral?: { tcb_info?: unknown; qe_identity?: unknown } | null;
     } | null;
     if (!j || typeof j !== "object") throw new DcapUnavailableError("Phala verifier returned a malformed body");
     if (j.quote?.verified !== true) return { ok: false, detail: "quote.verified is not true" };
-    if (typeof j.checksum === "string" && j.checksum.toLowerCase() !== createHash("sha256").update(quote).digest("hex")) {
-      throw new DcapUnavailableError("Phala verifier answered for a different quote (checksum mismatch)");
+    // Phala's `checksum` is not a hash of the quote bytes (checked against a live CVM on 2026-11-06), so
+    // tie the answer to this quote by its measured fields instead.
+    const f = parseTdxV4(quote);
+    const want = { mrtd: f.mrtd, rtmr0: f.rtmr0, rtmr1: f.rtmr1, rtmr2: f.rtmr2, rtmr3: f.rtmr3, reportdata: f.reportData };
+    for (const [k, v] of Object.entries(want)) {
+      if (String(j.quote?.body?.[k] ?? "").toLowerCase() !== bytesToHex(v)) {
+        throw new DcapUnavailableError(`Phala verifier answered for a different quote (${k} mismatch)`);
+      }
     }
 
     let tcbInfo: TdxTcbInfo;

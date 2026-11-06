@@ -3,17 +3,17 @@
  * writes a Safe Transaction Builder batch (one timelock.schedule per call); anyone can execute after 48h.
  *
  *   bun scripts/mainnet-governance.ts os <rawQuoteHex>           # OS measurement from a node's printed quote
- *   bun scripts/mainnet-governance.ts batch <osMeasurement>      # writes contracts/deployments/rhc-mainnet-safe-batch.json
- *   bun scripts/mainnet-governance.ts status <osMeasurement>
- *   bun scripts/mainnet-governance.ts execute <osMeasurement>    # POSTER_PRIVATE_KEY from .env.mainnet.local pays gas
+ *   bun scripts/mainnet-governance.ts batch <osMeasurement> <composeHash>    # writes contracts/deployments/rhc-mainnet-safe-batch.json
+ *   bun scripts/mainnet-governance.ts status <osMeasurement> <composeHash>
+ *   bun scripts/mainnet-governance.ts execute <osMeasurement> <composeHash>  # POSTER_PRIVATE_KEY from .env.mainnet.local pays gas
  *
- * The compose hash is read from harness-node/app-compose.json (written by scripts/app-compose.ts).
+ * Both values come from a running Phala CVM: the OS measurement from its quote (`os`), the compose hash from its
+ * printed registerEnclaveKey line (Phala builds the app-compose itself, so it is not computed locally).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, hexToBytes, http, parseAbi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { composeHashOf } from "../src/attest/rtmr.ts";
 import { osMeasurement, parseTdxV4 } from "../src/attest/tdx.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -23,15 +23,16 @@ const HOLDOUT_COMMIT: Hex = "0x22f2ef54de5c38b1b976f16b25ace1cc2686c2e0002786aec
 const CORPUS_URI = "https://github.com/BollardRh/Bollard/tree/main/services/corpus/public";
 const SALT: Hex = `0x${"0".repeat(64)}`;
 
-const [cmd, arg] = process.argv.slice(2);
+const [cmd, arg, composeArg] = process.argv.slice(2);
 if (cmd === "os") {
   console.log(osMeasurement(parseTdxV4(hexToBytes(arg as Hex))));
   process.exit(0);
 }
-if (!arg || !/^0x[0-9a-fA-F]{64}$/.test(arg)) throw new Error("usage: <batch|status|execute> <osMeasurement>");
+const isHash = (h?: string) => !!h && /^0x[0-9a-fA-F]{64}$/.test(h);
+if (!isHash(arg) || !isHash(composeArg)) throw new Error("usage: <batch|status|execute> <osMeasurement> <composeHash>");
 
 const d = JSON.parse(readFileSync(`${ROOT}contracts/deployments/rhc-mainnet.json`, "utf8"));
-const composeHash = composeHashOf(readFileSync(`${ROOT}harness-node/app-compose.json`));
+const composeHash = composeArg as Hex;
 const att = parseAbi([
   "function setSlasher(address)",
   "function setAllowedOs(bytes32,bool)",

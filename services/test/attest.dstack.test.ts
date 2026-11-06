@@ -14,7 +14,7 @@ import {
 import { DEV_KEY_PROVIDER, devQuote } from "../src/attest/devAttestor.ts";
 import { Enclave } from "../src/attest/enclave.ts";
 import { composeHashOf, DSTACK_RUNTIME_EVENT_TYPE, eventDigest, replayRtmr3, runtimeEvent, type DstackEvent } from "../src/attest/rtmr.ts";
-import { OFFSETS } from "../src/attest/tdx.ts";
+import { OFFSETS, parseTdxV4 } from "../src/attest/tdx.ts";
 import { verifyRegistration, type Registration } from "../src/attest/verify.ts";
 
 const REGISTRY = getAddress("0x2872ad3106951c0317df4d75a402025f94d8575e");
@@ -210,10 +210,14 @@ function collateral(edit: { platform?: (t: Tcb) => void; qe?: (t: Tcb) => void }
   edit.qe?.(q);
   return { ...COLLATERAL, tcb_info: JSON.stringify(t), qe_identity: JSON.stringify(q) };
 }
+const quoteBody = (quote: Uint8Array) => {
+  const f = parseTdxV4(quote);
+  const h = (b: Uint8Array) => `0x${Buffer.from(b).toString("hex")}`;
+  return { mrtd: h(f.mrtd), rtmr0: h(f.rtmr0), rtmr1: h(f.rtmr1), rtmr2: h(f.rtmr2), rtmr3: h(f.rtmr3), reportdata: h(f.reportData) };
+};
 const phalaBody = (c: unknown, quote: Uint8Array = QUOTE) => ({
   success: true,
-  quote: { verified: true },
-  checksum: createHash("sha256").update(quote).digest("hex"),
+  quote: { verified: true, body: quoteBody(quote) },
   quote_collateral: c,
 });
 const respond = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
@@ -275,10 +279,10 @@ describe("Phala verifier TCB status", () => {
     expect(await phala(phalaBody(collateral(), q)).verify(q)).toBe(false);
   });
 
-  test("missing or malformed collateral and a foreign checksum are unavailable, not a verdict", async () => {
+  test("missing or malformed collateral and an answer for another quote are unavailable, not a verdict", async () => {
     await expect(phala({ quote: { verified: true } }).verify(QUOTE)).rejects.toBeInstanceOf(DcapUnavailableError);
     await expect(phala(phalaBody({ ...COLLATERAL, tcb_info: "{" })).verify(QUOTE)).rejects.toBeInstanceOf(DcapUnavailableError);
-    await expect(phala({ ...phalaBody(collateral()), checksum: "00".repeat(32) }).verify(QUOTE)).rejects.toBeInstanceOf(DcapUnavailableError);
+    await expect(phala({ ...phalaBody(collateral()), quote: { verified: true, body: { ...quoteBody(QUOTE), rtmr3: `0x${"ab".repeat(48)}` } } }).verify(QUOTE)).rejects.toBeInstanceOf(DcapUnavailableError);
     const notJson = (async () => new Response("<html>", { status: 200 })) as unknown as typeof fetch;
     await expect(new PhalaCloudVerifier("https://x", notJson).verify(QUOTE)).rejects.toBeInstanceOf(DcapUnavailableError);
   });
