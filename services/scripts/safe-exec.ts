@@ -3,8 +3,8 @@
  * Safe, one plain CALL per transaction, signed by SAFE_OWNER1 and SAFE_OWNER2 from .env.mainnet.local
  * (2-of-3). DEPLOYER pays gas. Refuses any transaction that sends value.
  *
- *   bun scripts/safe-exec.ts            # shows what would run
- *   bun scripts/safe-exec.ts --yes
+ *   bun scripts/safe-exec.ts [batch.json]            # shows what would run (file in contracts/deployments/)
+ *   bun scripts/safe-exec.ts [batch.json] --yes
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,8 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const env = Object.fromEntries(
   readFileSync(`${ROOT}.env.mainnet.local`, "utf8").split("\n").filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.trim().split("=") as [string, string]),
 );
-const batch = JSON.parse(readFileSync(`${ROOT}contracts/deployments/rhc-mainnet-safe-batch.json`, "utf8")) as { transactions: { to: Address; value: string; data: Hex }[] };
+const file = process.argv.slice(2).find((a) => a.endsWith(".json")) ?? "rhc-mainnet-safe-batch.json";
+const batch = JSON.parse(readFileSync(`${ROOT}contracts/deployments/${file}`, "utf8")) as { transactions: { to: Address; value: string; data: Hex }[] };
 const SAFE = env.SAFE_ADDRESS as Address;
 const chain = defineChain({ id: 4663, name: "Robinhood Chain", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } });
 const pub = createPublicClient({ chain, transport: http(RPC) });
