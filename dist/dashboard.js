@@ -26,7 +26,12 @@
     "Untrusted control-plane instructions",
     "Attempts to extract secrets",
   ];
-  const DRAFT_KEY = "bollard-builder";
+  const DRAFT_KEY = "bollard-builder:4663"; // per network, so testnet drafts never prefill mainnet
+  try {
+    localStorage.removeItem("bollard-builder"); // pre-mainnet draft (testnet agent ids, request ids)
+  } catch {
+    /* storage blocked */
+  }
 
   // ------------------------------------------------------------------ helpers
   const esc = (v) =>
