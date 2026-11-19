@@ -36,6 +36,13 @@
   // ------------------------------------------------------------------ helpers
   const esc = (v) =>
     String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const markConnected = (sel) => {
+    const b = document.querySelector(sel);
+    if (b) {
+      b.textContent = "Wallet connected";
+      b.classList.replace("primary", "secondary");
+    }
+  };
   const short = (h) => (h && h.length > 14 ? `${h.slice(0, 6)}…${h.slice(-4)}` : h || "");
   const date = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—");
   const dateTime = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
@@ -457,7 +464,7 @@
         log(err?.shortMessage || err?.message || String(err), "bad");
       } finally {
         btn.disabled = false;
-        btn.textContent = label;
+        if (btn.textContent === "Working…") btn.textContent = label; // keep a label the action set (e.g. "Wallet connected")
       }
     };
 
@@ -468,6 +475,7 @@
         if (!w.hasWallet()) throw new Error("No browser wallet found. Install MetaMask or another EVM wallet to continue.");
         who = await w.connect({ chainId: cfg.chainId, network: cfg.network, rpcUrl: cfg.rpcUrl, explorer: cfg.explorer });
         document.querySelector("#arena-wallet").innerHTML = `${pill("Connected", "ok")} <span class="mono">${esc(short(who))}</span>`;
+        markConnected('[data-arena="connect"]');
         salt = readSalt(cfg, who);
         if (salt) {
           try {
@@ -601,7 +609,7 @@
         log(err?.shortMessage || err?.message || String(err), "bad");
       } finally {
         btn.disabled = false;
-        btn.textContent = label;
+        if (btn.textContent === "Working…") btn.textContent = label; // keep a label the action set (e.g. "Wallet connected")
       }
     };
     const needWallet = async () => {
@@ -615,6 +623,7 @@
       if (!w.hasWallet()) throw new Error("No browser wallet found. Install MetaMask or another EVM wallet to continue.");
       const a = await w.connect({ chainId: cfg.chainId, network: cfg.network, rpcUrl: cfg.rpcUrl, explorer: cfg.explorer });
       document.querySelector("#wallet-status").innerHTML = `${pill("Connected", "ok")} <span class="mono">${esc(short(a))}</span> · ${esc(await w.balanceEth())} ETH`;
+      markConnected('[data-act="connect"]');
       log("Wallet connected.");
     };
 
