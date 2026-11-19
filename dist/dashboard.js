@@ -420,8 +420,11 @@
         if ((await w.tokenBalance(cfg.contracts.feeToken)) < bounty + canaryAmount) throw new Error(`Not enough ${cfg.feeSymbol} for bounty + canary.`);
         log("Confirm in your wallet: approve (if needed), then open the arena…");
         const id = await w.openArena(cfg.contracts.arenaBounty, { token: cfg.contracts.feeToken, bounty, canaryAmount, agentKey: h.agentKey, houseAgentId: h.agentId, durationSec: BigInt(days * 86400) });
-        log(`Arena #${id} opened. It appears in the list within a minute.`, "ok");
-        setTimeout(() => (location.hash = `#arena/${id}`), 4000);
+        log(`Arena #${id} opened on-chain. Waiting for Bollard to pick it up (about a minute)…`, "ok");
+        for (let i = 0; i < 36 && !(await api.query("arena.get", { arenaId: String(id) }).catch(() => null)); i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+        location.hash = `#arena/${id}`;
       },
     };
     form.querySelectorAll("[data-fund]").forEach((btn) => (btn.onclick = () => run(btn, actions[btn.dataset.fund])));
