@@ -320,6 +320,8 @@
   }
 
   const fmt = (raw, decimals, symbol) => `${units(raw, decimals)} ${symbol}`;
+  const plural = (n, word) => `${n} ${word}${Number(n) === 1 ? "" : "s"}`;
+  const activity = (st) => `${plural(st.attempts, "attempt")} · ${plural(st.messages, "message")}`;
   const arenaState = (s) => pill(s === "open" ? "Open" : s === "won" ? "Won" : s === "ended" ? "Ended" : "Closed", s === "open" ? "ok" : s === "won" ? "warn" : "muted");
 
   async function arena() {
@@ -448,7 +450,7 @@
             ${kv(a.status === "open" ? "Ends" : "Ended", esc(dateTime(a.endsAt)))}
             ${kv("Attempt cost", `${esc(units(a.attemptBurn, cfg.stakeDecimals))} ${esc(cfg.stakeSymbol)} burned · lasts ${esc(Math.round(a.attemptWindowSec / 60))} min`)}
             ${kv("Limits", `${esc(a.limits.messages)} messages per attempt · 1 attempt per wallet per ${esc(a.limits.cooldownMin)} min`)}
-            ${kv("Activity", `${esc(a.stats.attempts)} attempts · ${esc(a.stats.messages)} messages`)}
+            ${kv("Activity", `<span id="arena-activity">${esc(activity(a.stats))}</span>`)}
             ${a.winner ? kv("Winner", await explorer("address", a.winner)) : ""}
           </dl>
           ${a.houseAgent ? `<details class="prompt"><summary>Published system prompt</summary><p>${esc(a.houseAgent.systemPrompt)}</p></details>` : ""}
@@ -512,6 +514,11 @@
         : `${pill(`${s.messagesLeft} messages left`, s.messagesLeft ? "ok" : "bad")} attempt ends ${esc(dateTime(s.expiresAt))}`;
       const form = document.querySelector("#chat-form");
       form.hidden = won || !s.messagesLeft || new Date(s.expiresAt) <= new Date();
+      // the Activity line was rendered with the page; keep it in step with the chat
+      api.query("arena.get", { arenaId: String(id) }).then((a) => {
+        const el = document.querySelector("#arena-activity");
+        if (a && el) el.textContent = activity(a.stats);
+      }).catch(() => {});
     };
     const showSession = async (s) => {
       document.querySelector("#attempt-row").hidden = true;
