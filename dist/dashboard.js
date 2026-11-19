@@ -118,7 +118,7 @@
   };
 
   let wallet;
-  const loadWallet = async () => (wallet ??= await import("./assets/wallet/wallet.mjs"));
+  const loadWallet = async () => (wallet ??= await import("./assets/wallet/wallet.mjs?v=20261119b"));
 
   // ------------------------------------------------------------------ shared pieces
   const gradeBadge = (grade, size = "") => `<span class="grade-badge g${Number(grade) || 0} ${size}" aria-label="Grade ${esc(grade)} of 5"><b>${esc(grade)}</b><small>/5</small></span>`;
@@ -344,8 +344,87 @@
       <section class="glass panel"><div class="panel-head"><div><h2>Wins</h2><p>Every win is settled on-chain and its chat becomes a corpus candidate.</p></div></div>
         ${winRows.length ? `<div class="rows">${winRows.join("")}</div>` : empty("No wins yet", "The first successful attack will show up here.")}
       </section>
+      <section class="glass panel"><div class="panel-head"><div><h2>Open an arena</h2><p>For funders. Bollard serves an arena when its house agent and funder wallet are registered together.</p></div></div>
+        <form id="fund-form" class="builder" autocomplete="off">
+          <div class="step-row"><button class="primary" type="button" data-fund="connect">Connect wallet</button><span id="fund-wallet" class="step-status">Not connected</span></div>
+          <div id="fund-fields" hidden>
+            <div class="form-grid">
+              <label>House agent<select name="house"></select></label>
+              <label>Open for (days)<input name="days" inputmode="numeric" value="7"></label>
+              <label>Bounty (USDG)<input name="bounty" inputmode="decimal" value="1"></label>
+              <label>Canary wallet (USDG)<input name="canary" inputmode="decimal" value="0.5"></label>
+            </div>
+            <div class="step-row"><button class="primary" type="button" data-fund="open">Approve and open arena</button></div>
+          </div>
+          <p id="fund-log" class="fine-print" role="status"></p>
+        </form>
+      </section>
       <section class="glass notice"><div><strong>From challenge to corpus</strong><p>Winning attacks become candidates for future test cases, subject to review.</p></div><a href="#families">Explore the corpus ↗</a></section>`
     );
+  }
+
+  /** "12.5" -> raw units, exact (no float). */
+  const toRaw = (s, decimals) => {
+    const m = /^(\d+)(?:\.(\d*))?$/.exec(String(s).trim());
+    if (!m || (m[2] || "").length > decimals) throw new Error(`Enter an amount with at most ${decimals} decimals.`);
+    return BigInt(m[1] + (m[2] || "").padEnd(decimals, "0"));
+  };
+
+  function bindFund() {
+    const form = document.querySelector("#fund-form");
+    if (!form) return;
+    const log = (msg, kind = "") => {
+      const el = document.querySelector("#fund-log");
+      el.className = `fine-print ${kind}`;
+      el.textContent = msg;
+    };
+    let mine = [];
+    const run = async (btn, fn) => {
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Working…";
+      try {
+        await fn();
+      } catch (err) {
+        log(err?.shortMessage || err?.message || String(err), "bad");
+      } finally {
+        btn.disabled = false;
+        if (btn.textContent === "Working…") btn.textContent = label;
+      }
+    };
+    const actions = {
+      async connect() {
+        const cfg = await config();
+        const w = await loadWallet();
+        if (!w.hasWallet()) throw new Error("No browser wallet found. Install MetaMask or another EVM wallet to continue.");
+        const who = await w.connect({ chainId: cfg.chainId, network: cfg.network, rpcUrl: cfg.rpcUrl, explorer: cfg.explorer });
+        const [agents, bal] = await Promise.all([api.query("arena.houseAgents"), w.tokenBalance(cfg.contracts.feeToken)]);
+        mine = agents.filter((h) => h.funder && h.agentKey && h.funder.toLowerCase() === who.toLowerCase());
+        document.querySelector("#fund-wallet").innerHTML = `${pill("Connected", "ok")} <span class="mono">${esc(short(who))}</span> · ${esc(units(bal.toString(), cfg.feeDecimals))} ${esc(cfg.feeSymbol)}`;
+        markConnected('[data-fund="connect"]');
+        if (!mine.length) return log("This wallet is not a registered arena funder yet. Ask the Bollard operator to register a house agent for it.");
+        form.elements.house.innerHTML = mine.map((h, i) => `<option value="${i}">${esc(h.label)} · agent ${esc(h.agentId)}</option>`).join("");
+        document.querySelector("#fund-fields").hidden = false;
+        log("");
+      },
+      async open() {
+        const cfg = await config();
+        const w = await loadWallet();
+        const h = mine[Number(form.elements.house.value)];
+        const days = Number(form.elements.days.value);
+        if (!h) throw new Error("Connect a registered funder wallet first.");
+        if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error("Open for 1 to 365 days.");
+        const bounty = toRaw(form.elements.bounty.value, cfg.feeDecimals);
+        const canaryAmount = toRaw(form.elements.canary.value, cfg.feeDecimals);
+        if (bounty === 0n) throw new Error("The bounty must be more than 0.");
+        if ((await w.tokenBalance(cfg.contracts.feeToken)) < bounty + canaryAmount) throw new Error(`Not enough ${cfg.feeSymbol} for bounty + canary.`);
+        log("Confirm in your wallet: approve (if needed), then open the arena…");
+        const id = await w.openArena(cfg.contracts.arenaBounty, { token: cfg.contracts.feeToken, bounty, canaryAmount, agentKey: h.agentKey, houseAgentId: h.agentId, durationSec: BigInt(days * 86400) });
+        log(`Arena #${id} opened. It appears in the list within a minute.`, "ok");
+        setTimeout(() => (location.hash = `#arena/${id}`), 4000);
+      },
+    };
+    form.querySelectorAll("[data-fund]").forEach((btn) => (btn.onclick = () => run(btn, actions[btn.dataset.fund])));
   }
 
   async function arenaDetail(id) {
@@ -799,6 +878,7 @@
       if (route === "agent") bindAgent(params[0] || "4663", params[1] || "");
       if (route === "families") bindFamilies();
       if (route === "arena" && params[0]) bindArena(params[0]);
+      if (route === "arena" && !params[0]) bindFund();
       if (route === "builders") {
         bindBuilders();
         const rid = draft.read().requestId;

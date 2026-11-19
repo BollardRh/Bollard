@@ -187,6 +187,37 @@ export async function enterAttempt(arena: Address, arenaId: string): Promise<{ s
   return { salt, tx: receipt.transactionHash };
 }
 
+/**
+ * Funder side: approves bounty + canary (only if needed) and opens an arena. The bounty and the canary use the same
+ * token. Returns the new arena id from the ArenaOpened event.
+ */
+export async function openArena(
+  arena: Address,
+  a: { token: Address; bounty: bigint; canaryAmount: bigint; agentKey: Address; houseAgentId: string; durationSec: bigint },
+): Promise<string> {
+  const total = a.bounty + a.canaryAmount;
+  if ((await allowance(a.token, arena)) < total) await approve(a.token, arena, total);
+  const abi = parseAbi([
+    "function openArena(address token, uint256 bounty, address canaryToken, uint256 canaryAmount, address agentKey, uint256 houseAgentId, uint64 duration) returns (uint256 id, address canary)",
+    "event ArenaOpened(uint256 indexed arenaId, address indexed funder, address token, uint256 bounty, address canary, address agentKey, uint256 houseAgentId, uint64 endsAt)",
+  ]);
+  const data = encodeFunctionData({
+    abi,
+    functionName: "openArena",
+    args: [a.token, a.bounty, a.token, a.canaryAmount, a.agentKey, BigInt(a.houseAgentId), a.durationSec],
+  });
+  const receipt = await send({ to: arena, data });
+  for (const log of receipt.logs) {
+    try {
+      const ev = decodeEventLog({ abi, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
+      if (ev.eventName === "ArenaOpened") return ev.args.arenaId.toString();
+    } catch {
+      /* another contract's log (the token transfer) */
+    }
+  }
+  throw new Error("Arena opened, but its id was not found in the receipt.");
+}
+
 export async function tokenBalance(token: Address): Promise<bigint> {
   return (await pub().readContract({ address: token, abi: parseAbi(["function balanceOf(address) view returns (uint256)"]), functionName: "balanceOf", args: [account!] })) as bigint;
 }

@@ -462,6 +462,12 @@ export async function arenaDetails(deps: AppDeps, arenaId: string) {
   };
 }
 
+/** Registered house agents (public: ids and addresses). A funder may open an arena only with its own pair. */
+export async function houseAgentList(deps: AppDeps) {
+  const rows = await deps.db.select().from(houseAgents).where(eq(houseAgents.chainId, deps.chain.chainId));
+  return rows.map((h) => ({ agentId: String(h.agentId), label: h.label, agentKey: h.agentKey, funder: h.funder }));
+}
+
 export async function arenaOverview(deps: AppDeps) {
   const rows = await deps.db.select().from(arenas).where(eq(arenas.chainId, deps.chain.chainId)).orderBy(desc(arenas.arenaId)).limit(50);
   const out = [];

@@ -4,7 +4,7 @@ import type { AppDeps } from "./context.ts";
 import { checkOnChain, latestRating, ratingHistory, searchAgents } from "./ratings.ts";
 import { fixList, requestCalldata, runStatus, setEndpoint, versionHash } from "./builder.ts";
 import { corpusVersionList, families, nodeKey, nodeList } from "./reads.ts";
-import { arenaDetails, arenaOverview, arenaWins, getSession, openSession, sendMessage } from "../arena/engine.ts";
+import { arenaDetails, arenaOverview, arenaWins, getSession, houseAgentList, openSession, sendMessage } from "../arena/engine.ts";
 
 /** tRPC v11 router (backend doc §8). All big numbers travel as decimal strings. */
 
@@ -52,6 +52,7 @@ export const appRouter = t.router({
     list: t.procedure.query(({ ctx }) => arenaOverview(ctx.deps)),
     get: t.procedure.input(z.object({ arenaId: Uint })).query(({ input, ctx }) => arenaDetails(ctx.deps, input.arenaId)),
     wins: t.procedure.query(({ ctx }) => arenaWins(ctx.deps)),
+    houseAgents: t.procedure.query(({ ctx }) => houseAgentList(ctx.deps)),
     // the salt behind the attempt commit authenticates the attacker, so it travels in POST bodies only
     session: t.procedure.input(ArenaSession.extend({ resume: z.boolean().default(false) })).mutation(({ input, ctx }) =>
       input.resume ? getSession(ctx.deps, input) : openSession(ctx.deps, input),
